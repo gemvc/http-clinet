@@ -2,6 +2,8 @@
 
 namespace Gemvc\Http\Client;
 
+use Gemvc\Http\Client\Exception\HttpClientException;
+
 /**
  * Asynchronous HTTP Client for Apache/Nginx environments
  * 
@@ -12,7 +14,7 @@ namespace Gemvc\Http\Client;
  * - Response callbacks
  * - All request types (GET, POST, PUT, form, multipart, raw)
  */
-class AsyncHttpClient implements IHttpClient
+class AsyncHttpClient extends AbstractHttpClient
 {
     /**
      * Pending requests queue
@@ -34,46 +36,6 @@ class AsyncHttpClient implements IHttpClient
     private int $maxConcurrency = 10;
 
     /**
-     * Connection timeout in seconds
-     */
-    private int $connect_timeout = 30;
-
-    /**
-     * Total request timeout in seconds
-     */
-    private int $timeout = 60;
-
-    /**
-     * SSL client certificate path
-     */
-    private ?string $ssl_cert = null;
-
-    /**
-     * SSL client private key path
-     */
-    private ?string $ssl_key = null;
-
-    /**
-     * CA certificate path
-     */
-    private ?string $ssl_ca = null;
-
-    /**
-     * Verify peer flag
-     */
-    private bool $ssl_verify_peer = true;
-
-    /**
-     * Verify host setting: 0, 1, or 2
-     */
-    private int $ssl_verify_host = 2;
-
-    /**
-     * Default user agent
-     */
-    private string $userAgent = 'gemserver-async';
-
-    /**
      * Response callbacks: ['requestId' => callable]
      * 
      * @var array<string, callable>
@@ -85,7 +47,8 @@ class AsyncHttpClient implements IHttpClient
      */
     public function __construct()
     {
-        // Initialize default configuration
+        // Set async-specific defaults
+        $this->userAgent = 'gemserver-async';
     }
 
     /**
@@ -94,60 +57,6 @@ class AsyncHttpClient implements IHttpClient
     public function setMaxConcurrency(int $maxConcurrency): self
     {
         $this->maxConcurrency = max(1, $maxConcurrency);
-        return $this;
-    }
-
-    /**
-     * Configure connection and total timeouts (seconds)
-     */
-    public function setTimeouts(int $connectTimeout, int $timeout): self
-    {
-        $this->connect_timeout = max(1, $connectTimeout);
-        $this->timeout = max(1, $timeout);
-        return $this;
-    }
-
-    /**
-     * Configure SSL client options
-     */
-    public function setSsl(?string $certPath, ?string $keyPath, ?string $caPath = null, bool $verifyPeer = true, int $verifyHost = 2): self
-    {
-        $this->ssl_cert = $certPath;
-        $this->ssl_key = $keyPath;
-        $this->ssl_ca = $caPath;
-        $this->ssl_verify_peer = $verifyPeer;
-        $this->ssl_verify_host = $verifyHost;
-        return $this;
-    }
-
-    /**
-     * Configure retry behavior (reserved for future implementation)
-     * 
-     * @param array<int> $retryOnHttpCodes
-     */
-    public function setRetries(int $maxRetries, int $retryDelayMs = 200, array $retryOnHttpCodes = []): self
-    {
-        // Retry functionality will be implemented in future version
-        // Currently kept for API compatibility
-        return $this;
-    }
-
-    /**
-     * Enable/disable retry on network errors (reserved for future implementation)
-     */
-    public function retryOnNetworkError(bool $retry): self
-    {
-        // Retry functionality will be implemented in future version
-        // Currently kept for API compatibility
-        return $this;
-    }
-
-    /**
-     * Set custom user agent
-     */
-    public function setUserAgent(string $userAgent): self
-    {
-        $this->userAgent = $userAgent;
         return $this;
     }
 
@@ -338,13 +247,16 @@ class AsyncHttpClient implements IHttpClient
     /**
      * Execute all queued requests concurrently
      * 
-     * @return array<string, array{success: bool, body: string|false, http_code: int, error: string, duration: float}>
+     * @return array<string, array{success: bool, body: string|false, http_code: int, error: string, duration: float, exception: HttpClientException|null, exception_type: string|null}>
      */
     public function executeAll(): array
     {
         if (empty($this->requestQueue)) {
             return [];
         }
+
+        // Clear previous errors
+        $this->clearErrors();
 
         $results = [];
         $multiHandle = curl_multi_init();
@@ -372,6 +284,26 @@ class AsyncHttpClient implements IHttpClient
 
                     curl_multi_add_handle($multiHandle, $ch);
                     $activeRequests++;
+                } else {
+                    // Failed to create curl handle - create and store exception
+                    $exception = $this->createException(
+                        $request['url'],
+                        "Failed to initialize cURL handle for request {$request['id']}",
+                        0,
+                        0
+                    );
+                    $this->addError($exception);
+                    
+                    // Add error result for this request
+                    $results[$request['id']] = [
+                        'success' => false,
+                        'body' => false,
+                        'http_code' => 0,
+                        'error' => $exception->getMessage(),
+                        'duration' => 0.0,
+                        'exception' => $exception,
+                        'exception_type' => get_class($exception)
+                    ];
                 }
 
                 $queueIndex++;
@@ -421,7 +353,7 @@ class AsyncHttpClient implements IHttpClient
     /**
      * Execute requests and wait for all to complete (alias for executeAll)
      * 
-     * @return array<string, array{success: bool, body: string|false, http_code: int, error: string, duration: float}>
+     * @return array<string, array{success: bool, body: string|false, http_code: int, error: string, duration: float, exception: HttpClientException|null, exception_type: string|null}>
      */
     public function waitForAll(): array
     {
@@ -528,26 +460,8 @@ class AsyncHttpClient implements IHttpClient
             return false;
         }
 
-        // Basic options
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        if ($this->userAgent !== '') {
-            curl_setopt($ch, CURLOPT_USERAGENT, $this->userAgent);
-        }
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $this->connect_timeout);
-        curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
-
-        // SSL options
-        if ($this->ssl_cert) {
-            curl_setopt($ch, CURLOPT_SSLCERT, $this->ssl_cert);
-        }
-        if ($this->ssl_key) {
-            curl_setopt($ch, CURLOPT_SSLKEY, $this->ssl_key);
-        }
-        if ($this->ssl_ca) {
-            curl_setopt($ch, CURLOPT_CAINFO, $this->ssl_ca);
-        }
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $this->ssl_verify_peer);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $this->ssl_verify_host ? 2 : 0);
+        // Apply common cURL options (timeouts, SSL, user agent)
+        $this->applyCommonCurlOptions($ch);
 
         // Headers
         $headers = ['Content-Type: application/json'];
@@ -611,26 +525,48 @@ class AsyncHttpClient implements IHttpClient
      * @param \CurlHandle $ch
      * @param string $requestId
      * @param int $handleId
-     * @return array{success: bool, body: string|false, http_code: int, error: string, duration: float}
+     * @return array{success: bool, body: string|false, http_code: int, error: string, duration: float, exception: HttpClientException|null, exception_type: string|null}
      */
     private function processResponse(\CurlHandle $ch, string $requestId, int $handleId): array
     {
         $body = curl_exec($ch);
         $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
+        $curlErrorCode = $this->getCurlErrorCode($ch);
         $metadata = $this->requestMetadata[$handleId] ?? null;
-        $duration = $metadata ? microtime(true) - $metadata['startTime'] : 0.0;
+        $url = $metadata['url'] ?? 'unknown';
+        $duration = $metadata ? (microtime(true) - $metadata['startTime']) : 0.0;
 
+        // Check for actual errors (network/timeout, not HTTP error codes)
+        // HTTP error codes (4xx, 5xx) are valid responses
+        $hasNetworkError = !is_string($body) || $error !== '';
         $success = is_string($body) && $error === '' && $httpCode >= 200 && $httpCode < 400;
-
         $responseBody = is_string($body) ? $body : false;
+        
+        // Create exception only for network/timeout errors, not HTTP error codes
+        $exception = null;
+        $exceptionType = null;
+        if ($hasNetworkError) {
+            $exception = $this->createException(
+                $url,
+                $error ?: "Request failed",
+                $httpCode,
+                $curlErrorCode
+            );
+            $exceptionType = get_class($exception);
+            
+            // Store exception in errors array
+            $this->addError($exception);
+        }
         
         return [
             'success' => $success,
             'body' => $responseBody,
             'http_code' => $httpCode,
             'error' => $error,
-            'duration' => $duration
+            'duration' => $duration,
+            'exception' => $exception,
+            'exception_type' => $exceptionType
         ];
     }
 }

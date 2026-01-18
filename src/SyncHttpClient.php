@@ -3,6 +3,8 @@
 namespace Gemvc\Http\Client;
 
 use Gemvc\Http\Client\Exception\HttpClientException;
+use Gemvc\Http\Client\Exception\NetworkException;
+use Gemvc\Http\Client\Exception\TimeoutException;
 
 /**
  * Synchronous HTTP Client for Apache/Nginx environments
@@ -14,7 +16,7 @@ use Gemvc\Http\Client\Exception\HttpClientException;
  * - Retry logic with exponential backoff
  * - Configurable timeouts
  */
-class SyncHttpClient implements IHttpClient
+class SyncHttpClient extends AbstractHttpClient
 {
     /**
      * Last cURL error message (empty string if none).
@@ -69,63 +71,6 @@ class SyncHttpClient implements IHttpClient
     public array $files;
 
     /**
-     * Connection timeout in seconds (0 keeps legacy behavior).
-     */
-    private int $connect_timeout = 0;
-
-    /**
-     * Total request timeout in seconds (0 keeps legacy behavior).
-     */
-    private int $timeout = 0;
-
-    /**
-     * SSL client certificate path (optional).
-     */
-    private ?string $ssl_cert = null;
-
-    /**
-     * SSL client private key path (optional).
-     */
-    private ?string $ssl_key = null;
-
-    /**
-     * CA certificate path (optional).
-     */
-    private ?string $ssl_ca = null;
-
-    /**
-     * Verify peer flag (true by default).
-     */
-    private bool $ssl_verify_peer = true;
-
-    /**
-     * Verify host setting: 0, 1, or 2 (2 by default).
-     */
-    private int $ssl_verify_host = 2;
-
-    /**
-     * Maximum retry attempts (0 = no retries).
-     */
-    private int $max_retries = 0;
-
-    /**
-     * Delay between retries in milliseconds.
-     */
-    private int $retry_delay_ms = 200;
-
-    /**
-     * HTTP codes that trigger a retry (opt-in).
-     *
-     * @var array<int>
-     */
-    private array $retry_on_http_codes = [429, 500, 502, 503, 504];
-
-    /**
-     * Retry on network error (cURL error) if true.
-     */
-    private bool $retry_on_network_error = true;
-
-    /**
      * Raw request body (when using postRaw()).
      */
     private ?string $rawBody = null;
@@ -137,8 +82,31 @@ class SyncHttpClient implements IHttpClient
      */
     private ?array $formFields = null;
 
+    /**
+     * Whether to throw exceptions on errors (default: true for better error handling)
+     */
+    private bool $throwExceptions = true;
+
+    /**
+     * Control whether exceptions are thrown on errors
+     * 
+     * @param bool $throw If true, exceptions will be thrown. If false, errors are stored in $errors array.
+     * @return self
+     */
+    public function throwExceptions(bool $throw): self
+    {
+        $this->throwExceptions = $throw;
+        return $this;
+    }
+
     public function __construct()
     {
+        // Set legacy defaults (0 = no timeout, uses cURL defaults)
+        $this->connect_timeout = 0;
+        $this->timeout = 0;
+        $this->userAgent = 'gemserver';
+        
+        // Initialize legacy public properties
         $this->error = 'call not initialized';
         $this->http_response_code = 0;
         $this->data = [];
@@ -147,55 +115,6 @@ class SyncHttpClient implements IHttpClient
         $this->files = [];
         $this->responseBody = false;
         $this->method = 'GET';
-    }
-
-    /**
-     * Configure connection and total timeouts (seconds).
-     * Defaults (0) keep legacy behavior.
-     */
-    public function setTimeouts(int $connectTimeout, int $timeout): self
-    {
-        $this->connect_timeout = max(0, $connectTimeout);
-        $this->timeout = max(0, $timeout);
-        return $this;
-    }
-
-    /**
-     * Configure SSL client options.
-     * If not set, legacy behavior remains unchanged.
-     */
-    public function setSsl(?string $certPath, ?string $keyPath, ?string $caPath = null, bool $verifyPeer = true, int $verifyHost = 2): self
-    {
-        $this->ssl_cert = $certPath;
-        $this->ssl_key = $keyPath;
-        $this->ssl_ca = $caPath;
-        $this->ssl_verify_peer = $verifyPeer;
-        $this->ssl_verify_host = $verifyHost;
-        return $this;
-    }
-
-    /**
-     * Configure retry behavior (opt-in).
-     *
-     * @param array<int> $retryOnHttpCodes
-     */
-    public function setRetries(int $maxRetries, int $retryDelayMs = 200, array $retryOnHttpCodes = []): self
-    {
-        $this->max_retries = max(0, $maxRetries);
-        $this->retry_delay_ms = max(0, $retryDelayMs);
-        if (!empty($retryOnHttpCodes)) {
-            $this->retry_on_http_codes = array_values(array_unique(array_map('intval', $retryOnHttpCodes)));
-        }
-        return $this;
-    }
-
-    /**
-     * Enable/disable retry on network (cURL) errors.
-     */
-    public function retryOnNetworkError(bool $retry): self
-    {
-        $this->retry_on_network_error = $retry;
-        return $this;
     }
 
     /**
@@ -291,6 +210,10 @@ class SyncHttpClient implements IHttpClient
     /**
      * Perform the API call.
      * Applies optional timeouts/SSL/retries if configured; otherwise preserves legacy behavior.
+     * 
+     * @throws \Gemvc\Http\Client\Exception\HttpClientException
+     * @throws \Gemvc\Http\Client\Exception\NetworkException
+     * @throws \Gemvc\Http\Client\Exception\TimeoutException
      */
     private function call(string $remoteApiUrl): string|false
     {
@@ -298,40 +221,34 @@ class SyncHttpClient implements IHttpClient
         $this->responseBody = false;
         $this->http_response_code = 0;
         $this->error = '';
+        $this->clearErrors(); // Clear previous errors
 
         $attempts = $this->max_retries + 1;
+        $lastException = null;
 
         for ($attempt = 1; $attempt <= $attempts; $attempt++) {
             $ch = curl_init($remoteApiUrl);
             if ($ch === false) {
                 $this->http_response_code = 500;
                 $this->error = "remote api $remoteApiUrl is not responding";
+                $exception = $this->createException(
+                    $remoteApiUrl,
+                    $this->error,
+                    500,
+                    0
+                );
+                
+                // Store exception in errors array
+                $this->addError($exception);
+                
+                if ($this->throwExceptions) {
+                    throw $exception;
+                }
                 return false;
             }
 
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_USERAGENT, 'gemserver');
-
-            // Optional timeouts (0 keeps legacy)
-            if ($this->connect_timeout > 0) {
-                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $this->connect_timeout);
-            }
-            if ($this->timeout > 0) {
-                curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
-            }
-
-            // Optional SSL client/cert configuration
-            if ($this->ssl_cert) {
-                curl_setopt($ch, CURLOPT_SSLCERT, $this->ssl_cert);
-            }
-            if ($this->ssl_key) {
-                curl_setopt($ch, CURLOPT_SSLKEY, $this->ssl_key);
-            }
-            if ($this->ssl_ca) {
-                curl_setopt($ch, CURLOPT_CAINFO, $this->ssl_ca);
-            }
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $this->ssl_verify_peer);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $this->ssl_verify_host ? 2 : 0);
+            // Apply common cURL options (timeouts, SSL, user agent)
+            $this->applyCommonCurlOptions($ch);
 
             $this->setMethod($ch);
             $this->setHeaders($ch);
@@ -340,27 +257,57 @@ class SyncHttpClient implements IHttpClient
             $this->setFiles($ch);
 
             $this->responseBody = curl_exec($ch);
-            $this->http_response_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $this->http_response_code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $this->error = curl_error($ch);
+            $curlErrorCode = $this->getCurlErrorCode($ch);
 
             curl_close($ch);
 
-            // Retry policy (opt-in)
-            $shouldRetry =
-                ($this->retry_on_network_error && $this->error !== '') ||
-                in_array($this->http_response_code, $this->retry_on_http_codes, true);
+            // Check for actual errors (network/timeout, not HTTP error codes)
+            // HTTP error codes (4xx, 5xx) are valid responses and should return the body
+            $hasNetworkError = !is_string($this->responseBody) || $this->error !== '';
 
-            if ($shouldRetry && $attempt < $attempts) {
-                usleep($this->retry_delay_ms * 1000);
-                continue;
-            }
+            if ($hasNetworkError) {
+                $exception = $this->createException(
+                    $remoteApiUrl,
+                    $this->error ?: "Request failed",
+                    $this->http_response_code,
+                    $curlErrorCode
+                );
+                $lastException = $exception;
+                
+                // Store exception in errors array
+                $this->addError($exception);
 
-            if (!is_string($this->responseBody)) {
+                // Use inherited retry logic
+                if ($this->shouldRetry($this->error, $this->http_response_code) && $attempt < $attempts) {
+                    $this->waitForRetry();
+                    continue;
+                }
+
+                // All retries exhausted or not retryable
+                if ($this->throwExceptions) {
+                    throw $exception;
+                }
                 return false;
             }
-            return $this->responseBody;
+
+            // Success - return response body even if HTTP code is 4xx/5xx
+            // HTTP error codes are valid responses, not exceptions
+            return is_string($this->responseBody) ? $this->responseBody : false;
         }
 
+        // All retries exhausted
+        if ($lastException !== null) {
+            // Store last exception if not already stored
+            if (!in_array($lastException, $this->errors, true)) {
+                $this->addError($lastException);
+            }
+            
+            if ($this->throwExceptions) {
+                throw $lastException;
+            }
+        }
         return false;
     }
 
@@ -444,7 +391,15 @@ class SyncHttpClient implements IHttpClient
         if ($this->method === 'POST' || $this->method === 'PUT') {
             $data_to_send = json_encode($this->data);
             if (!is_string($data_to_send)) {
-                throw new HttpClientException('process stopped becase data failed to encod to json format');
+                $jsonError = json_last_error_msg();
+                throw new HttpClientException(
+                    "Failed to encode data to JSON format: {$jsonError}",
+                    0,
+                    null,
+                    null,
+                    0,
+                    0
+                );
             }
             curl_setopt($ch, CURLOPT_POSTFIELDS, $data_to_send);
         }

@@ -13,6 +13,7 @@ A framework-independent HTTP client package providing both synchronous and async
 
 - ✅ **Synchronous API calls** with retry logic and SSL support
 - ✅ **Asynchronous concurrent requests** with configurable concurrency
+- ✅ **Enhanced error handling** with exception storage and classification
 - ✅ **Environment-aware execution** - optimized for each runtime
 - ✅ **Framework-independent** - use in any PHP project
 - ✅ **Backward compatible** with GEMVC framework
@@ -42,6 +43,24 @@ $client->setTimeouts(10, 30)
 
 $response = $client->get('https://api.example.com/users', ['page' => 1]);
 $data = $client->post('https://api.example.com/users', ['name' => 'John']);
+
+// Error handling (exceptions enabled by default)
+try {
+    $response = $client->get('https://api.example.com/data');
+} catch (\Gemvc\Http\Client\Exception\NetworkException $e) {
+    echo "Network error: {$e->getMessage()}\n";
+    if ($e->isDnsError()) {
+        echo "DNS resolution failed\n";
+    }
+}
+
+// Or use error storage (disable exceptions)
+$client->throwExceptions(false);
+$response = $client->get('https://api.example.com/data');
+if ($client->hasErrors()) {
+    $error = $client->getLastError();
+    echo "Error: {$error->getMessage()}\n";
+}
 ```
 
 ### Asynchronous Client
@@ -109,6 +128,14 @@ setTimeouts(int $connectTimeout, int $timeout): self
 setSsl(?string $cert, ?string $key, ?string $ca = null, bool $verifyPeer = true, int $verifyHost = 2): self
 setRetries(int $maxRetries, int $retryDelayMs = 200, array $retryOnHttpCodes = []): self
 retryOnNetworkError(bool $retry): self
+setUserAgent(string $userAgent): self
+throwExceptions(bool $throw): self
+
+// Error Handling
+clearErrors(): self
+hasErrors(): bool
+getErrors(): array<HttpClientException>
+getLastError(): ?HttpClientException
 ```
 
 ### AsyncHttpClient Methods
@@ -123,7 +150,7 @@ addPostMultipart(string $requestId, string $url, array $fields = [], array $file
 addPostRaw(string $requestId, string $url, string $body, string $contentType, array $headers = []): self
 
 // Execution
-executeAll(): array<string, array{success: bool, body: string|false, http_code: int, error: string, duration: float}>
+executeAll(): array<string, array{success: bool, body: string|false, http_code: int, error: string, duration: float, exception: HttpClientException|null, exception_type: string|null}>
 fireAndForget(): bool
 waitForAll(): array
 
@@ -131,9 +158,16 @@ waitForAll(): array
 setMaxConcurrency(int $max): self
 setTimeouts(int $connectTimeout, int $timeout): self
 setSsl(?string $cert, ?string $key, ?string $ca = null, bool $verifyPeer = true, int $verifyHost = 2): self
+setUserAgent(string $userAgent): self
 onResponse(string $requestId, callable $callback): self
 clearQueue(): self
 getQueueSize(): int
+
+// Error Handling
+clearErrors(): self
+hasErrors(): bool
+getErrors(): array<HttpClientException>
+getLastError(): ?HttpClientException
 ```
 
 ## Framework Integration (GEMVC)
@@ -151,11 +185,60 @@ The framework provides:
 - Seamless integration with existing `ApiCall` and `AsyncApiCall` classes
 - 100% backward compatibility
 
+## Error Handling
+
+The package provides comprehensive error handling with automatic exception classification:
+
+### Exception Types
+
+- **`HttpClientException`** - Base exception for all HTTP client errors
+- **`NetworkException`** - Network-related errors (DNS, connection, SSL, etc.)
+- **`TimeoutException`** - Request timeout errors (connection or total timeout)
+
+### Error Storage
+
+All exceptions are automatically stored in the `$errors` array property, allowing you to inspect errors without try-catch blocks:
+
+```php
+$client = new SyncHttpClient();
+$client->throwExceptions(false); // Store errors instead of throwing
+
+$response = $client->get('https://api.example.com/data');
+
+if ($client->hasErrors()) {
+    $error = $client->getLastError();
+    // Access error details: $error->getUrl(), $error->getHttpCode(), etc.
+}
+```
+
+### Network Error Classification
+
+Network errors are automatically classified by type:
+
+```php
+try {
+    $client->get('https://api.example.com/data');
+} catch (NetworkException $e) {
+    if ($e->isDnsError()) {
+        // DNS resolution failed
+    } elseif ($e->isSslError()) {
+        // SSL/TLS handshake failed
+    } elseif ($e->isConnectionError()) {
+        // Connection failed
+    }
+    
+    // Get error type description
+    echo $e->getErrorTypeDescription();
+}
+```
+
 ## Testing
 
 ```bash
 composer test
 ```
+
+Test coverage: **85.30%** with comprehensive error handling tests.
 
 ## License
 

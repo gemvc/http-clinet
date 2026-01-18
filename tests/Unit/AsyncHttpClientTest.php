@@ -252,4 +252,108 @@ class AsyncHttpClientTest extends TestCase
         
         $this->assertSame($async, $result);
     }
+
+    // ==========================================
+    // Error Handling Tests
+    // ==========================================
+
+    public function testErrorsPropertyIsEmptyInitially(): void
+    {
+        $async = new AsyncHttpClient();
+        
+        $this->assertEmpty($async->errors);
+        $this->assertFalse($async->hasErrors());
+        $this->assertNull($async->getLastError());
+        $this->assertEmpty($async->getErrors());
+    }
+
+    public function testErrorsPropertyAfterFailedRequest(): void
+    {
+        $async = new AsyncHttpClient();
+        $async->addGet('req1', 'https://invalid-domain-that-does-not-exist-xyz123.com/api');
+        
+        $results = $async->executeAll();
+        
+        $this->assertNotEmpty($async->errors);
+        $this->assertTrue($async->hasErrors());
+        $this->assertNotNull($async->getLastError());
+        $this->assertInstanceOf(\Gemvc\Http\Client\Exception\HttpClientException::class, $async->getLastError());
+        
+        // Result should also contain exception
+        $this->assertNotNull($results['req1']['exception']);
+        $this->assertNotEmpty($results['req1']['exception_type']);
+    }
+
+    public function testClearErrors(): void
+    {
+        $async = new AsyncHttpClient();
+        $async->addGet('req1', 'https://invalid-domain-that-does-not-exist-xyz123.com/api');
+        $async->executeAll();
+        
+        $this->assertTrue($async->hasErrors());
+        
+        $result = $async->clearErrors();
+        $this->assertSame($async, $result);
+        $this->assertFalse($async->hasErrors());
+        $this->assertEmpty($async->errors);
+    }
+
+    public function testErrorsClearedOnNewExecuteAll(): void
+    {
+        $async = new AsyncHttpClient();
+        $async->addGet('req1', 'https://invalid-domain-that-does-not-exist-xyz123.com/api');
+        $async->executeAll();
+        $this->assertTrue($async->hasErrors());
+        
+        // New executeAll should clear previous errors
+        $async->addGet('req2', 'https://httpbin.org/get');
+        $async->executeAll();
+        // Errors cleared at start, but may be repopulated if new requests fail
+    }
+
+    public function testGetErrorsReturnsArray(): void
+    {
+        $async = new AsyncHttpClient();
+        $async->addGet('req1', 'https://invalid-domain-that-does-not-exist-xyz123.com/api');
+        $async->executeAll();
+        
+        $errors = $async->getErrors();
+        $this->assertIsArray($errors);
+        $this->assertNotEmpty($errors);
+        $this->assertInstanceOf(\Gemvc\Http\Client\Exception\HttpClientException::class, $errors[0]);
+    }
+
+    public function testExceptionInResultContainsUrl(): void
+    {
+        $async = new AsyncHttpClient();
+        $url = 'https://invalid-domain-that-does-not-exist-xyz123.com/api';
+        $async->addGet('req1', $url);
+        
+        $results = $async->executeAll();
+        
+        $this->assertNotNull($results['req1']['exception']);
+        $this->assertEquals($url, $results['req1']['exception']->getUrl());
+    }
+
+    public function testMultipleErrorsStored(): void
+    {
+        $async = new AsyncHttpClient();
+        $async->addGet('req1', 'https://invalid-domain-1-xyz123.com/api');
+        $async->addGet('req2', 'https://invalid-domain-2-xyz123.com/api');
+        
+        $async->executeAll();
+        
+        $this->assertGreaterThanOrEqual(2, count($async->errors));
+    }
+
+    public function testResultContainsExceptionType(): void
+    {
+        $async = new AsyncHttpClient();
+        $async->addGet('req1', 'https://invalid-domain-that-does-not-exist-xyz123.com/api');
+        
+        $results = $async->executeAll();
+        
+        $this->assertNotEmpty($results['req1']['exception_type']);
+        $this->assertIsString($results['req1']['exception_type']);
+    }
 }

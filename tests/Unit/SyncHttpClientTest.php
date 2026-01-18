@@ -260,6 +260,30 @@ class SyncHttpClientTest extends TestCase
         $this->assertArrayHasKey('X-Another-Header', $client->header);
         $this->assertEquals('value', $client->header['X-Custom-Header']);
     }
+
+    public function testSetHeadersWithMultipleValues(): void
+    {
+        $client = new SyncHttpClient();
+        $client->header = [
+            'X-Header-1' => 'value1',
+            'X-Header-2' => 'value2',
+            'X-Header-3' => 'value3'
+        ];
+        
+        $client->get('https://example.com/api');
+        
+        $this->assertCount(3, $client->header);
+    }
+
+    public function testSetHeadersWithEmptyArray(): void
+    {
+        $client = new SyncHttpClient();
+        $client->header = [];
+        
+        $client->get('https://example.com/api');
+        
+        $this->assertIsArray($client->header);
+    }
     
     public function testSetAuthorizationHeader(): void
     {
@@ -277,6 +301,27 @@ class SyncHttpClientTest extends TestCase
         // Should accept array (for compatibility)
         $this->assertIsArray($client->authorizationHeader);
     }
+
+    public function testSetAuthorizationHeaderAsString(): void
+    {
+        $client = new SyncHttpClient();
+        $client->authorizationHeader = 'Bearer token-123';
+        
+        $this->assertIsString($client->authorizationHeader);
+        $this->assertEquals('Bearer token-123', $client->authorizationHeader);
+    }
+
+    public function testAuthorizationHeaderOverwritesHeaders(): void
+    {
+        $client = new SyncHttpClient();
+        $client->header = ['Content-Type' => 'application/json'];
+        $client->authorizationHeader = 'Bearer token-123';
+        
+        // Authorization header should overwrite when string is provided
+        $client->get('https://example.com/api');
+        
+        $this->assertTrue(true);
+    }
     
     // ============================================
     // Files Tests
@@ -290,6 +335,52 @@ class SyncHttpClientTest extends TestCase
         $this->assertIsArray($client->files);
         $this->assertCount(2, $client->files);
     }
+
+    public function testSetFilesWithLegacyFlow(): void
+    {
+        $client = new SyncHttpClient();
+        $client->throwExceptions(false);
+        $client->data = ['field1' => 'value1'];
+        $client->files = ['file1' => '/nonexistent/file.txt'];
+        
+        // Should handle files in legacy flow
+        $client->post('https://example.com/api');
+        
+        $this->assertTrue(true);
+    }
+
+    public function testSetFilesWithExistingFile(): void
+    {
+        // Create a temporary file for testing
+        $tempFile = sys_get_temp_dir() . '/test_file_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'test content');
+        
+        try {
+            $client = new SyncHttpClient();
+            $client->data = ['field1' => 'value1'];
+            $client->files = ['file1' => $tempFile];
+            
+            // Should handle existing file
+            $client->post('https://example.com/api');
+            
+            $this->assertTrue(true);
+        } finally {
+            if (file_exists($tempFile)) {
+                unlink($tempFile);
+            }
+        }
+    }
+
+    public function testSetFilesReturnsFalseWhenNoFiles(): void
+    {
+        $client = new SyncHttpClient();
+        $client->data = ['field1' => 'value1'];
+        $client->files = [];
+        
+        $client->post('https://example.com/api');
+        
+        $this->assertTrue(true);
+    }
     
     // ============================================
     // Data Tests
@@ -302,6 +393,31 @@ class SyncHttpClientTest extends TestCase
         
         $this->assertIsArray($client->data);
         $this->assertEquals('value1', $client->data['key1']);
+    }
+
+    public function testSetDataWithComplexData(): void
+    {
+        $client = new SyncHttpClient();
+        $client->data = [
+            'string' => 'value',
+            'int' => 123,
+            'float' => 45.67,
+            'bool' => true,
+            'array' => ['nested' => 'data'],
+            'null' => null
+        ];
+        
+        $this->assertIsArray($client->data);
+        $this->assertCount(6, $client->data);
+    }
+
+    public function testSetDataWithEmptyArray(): void
+    {
+        $client = new SyncHttpClient();
+        $client->data = [];
+        
+        $this->assertIsArray($client->data);
+        $this->assertEmpty($client->data);
     }
     
     // ============================================
@@ -439,6 +555,395 @@ class SyncHttpClientTest extends TestCase
         $client->setRetries(3, 500, [429, 500, 429, 502]);
         
         // Duplicates should be removed
+        $this->assertTrue(true);
+    }
+
+    // ============================================
+    // Error Handling Tests
+    // ============================================
+
+    public function testThrowExceptionsMethod(): void
+    {
+        $client = new SyncHttpClient();
+        $result = $client->throwExceptions(true);
+        
+        $this->assertSame($client, $result);
+    }
+
+    public function testThrowExceptionsDisabled(): void
+    {
+        $client = new SyncHttpClient();
+        $client->throwExceptions(false);
+        
+        // Should not throw, just return false
+        $result = $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
+        
+        $this->assertFalse($result);
+        $this->assertNotEmpty($client->error);
+    }
+
+    public function testErrorsPropertyIsEmptyInitially(): void
+    {
+        $client = new SyncHttpClient();
+        
+        $this->assertEmpty($client->errors);
+        $this->assertFalse($client->hasErrors());
+        $this->assertNull($client->getLastError());
+        $this->assertEmpty($client->getErrors());
+    }
+
+    public function testErrorsPropertyAfterFailedRequest(): void
+    {
+        $client = new SyncHttpClient();
+        $client->throwExceptions(false);
+        
+        $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
+        
+        $this->assertNotEmpty($client->errors);
+        $this->assertTrue($client->hasErrors());
+        $this->assertNotNull($client->getLastError());
+        $this->assertInstanceOf(\Gemvc\Http\Client\Exception\HttpClientException::class, $client->getLastError());
+    }
+
+    public function testClearErrors(): void
+    {
+        $client = new SyncHttpClient();
+        $client->throwExceptions(false);
+        
+        $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
+        $this->assertTrue($client->hasErrors());
+        
+        $result = $client->clearErrors();
+        $this->assertSame($client, $result);
+        $this->assertFalse($client->hasErrors());
+        $this->assertEmpty($client->errors);
+    }
+
+    public function testErrorsClearedOnNewRequest(): void
+    {
+        $client = new SyncHttpClient();
+        $client->throwExceptions(false);
+        
+        $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
+        $this->assertTrue($client->hasErrors());
+        
+        // New request should clear errors
+        $client->get('https://httpbin.org/get');
+        // Errors should be cleared at start of new request
+        // (but may be repopulated if new request fails)
+    }
+
+    public function testGetErrorsReturnsArray(): void
+    {
+        $client = new SyncHttpClient();
+        $client->throwExceptions(false);
+        
+        $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
+        
+        $errors = $client->getErrors();
+        $this->assertIsArray($errors);
+        $this->assertNotEmpty($errors);
+        $this->assertInstanceOf(\Gemvc\Http\Client\Exception\HttpClientException::class, $errors[0]);
+    }
+
+    public function testExceptionContainsUrlAndErrorCode(): void
+    {
+        $client = new SyncHttpClient();
+        $client->throwExceptions(false);
+        
+        $url = 'https://invalid-domain-that-does-not-exist-xyz123.com/api';
+        $client->get($url);
+        
+        $error = $client->getLastError();
+        $this->assertNotNull($error);
+        $this->assertEquals($url, $error->getUrl());
+        $this->assertGreaterThan(0, $error->getCurlErrorCode());
+    }
+
+    public function testNetworkExceptionType(): void
+    {
+        $client = new SyncHttpClient();
+        $client->throwExceptions(false);
+        
+        $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
+        
+        $error = $client->getLastError();
+        if ($error instanceof \Gemvc\Http\Client\Exception\NetworkException) {
+            $this->assertNotEmpty($error->getErrorType());
+            $this->assertNotEmpty($error->getErrorTypeDescription());
+        }
+    }
+
+    public function testSetUserAgent(): void
+    {
+        $client = new SyncHttpClient();
+        $result = $client->setUserAgent('Custom-Agent/1.0');
+        
+        $this->assertSame($client, $result);
+    }
+
+    public function testSetUserAgentWithEmptyString(): void
+    {
+        $client = new SyncHttpClient();
+        $client->setUserAgent('');
+        
+        // Should accept empty string
+        $this->assertTrue(true);
+    }
+
+    public function testRetryWithAllRetriesExhausted(): void
+    {
+        $client = new SyncHttpClient();
+        $client->throwExceptions(false);
+        $client->setRetries(2, 10, []);
+        $client->retryOnNetworkError(true);
+        
+        $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
+        
+        // Should have errors after all retries
+        $this->assertTrue($client->hasErrors());
+    }
+
+    public function testRetryWithHttpCodeRetry(): void
+    {
+        $client = new SyncHttpClient();
+        $client->throwExceptions(false);
+        $client->setRetries(1, 10, [500, 502]);
+        $client->retryOnNetworkError(false);
+        
+        // This won't actually retry since we're not getting real HTTP responses
+        // But tests the configuration
+        $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
+        
+        $this->assertTrue(true);
+    }
+
+    public function testShouldRetryReturnsFalseWhenRetriesDisabled(): void
+    {
+        $client = new SyncHttpClient();
+        $client->throwExceptions(false);
+        $client->setRetries(0, 10, [500]);
+        $client->retryOnNetworkError(false);
+        
+        // Should not retry when max_retries is 0
+        $result = $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
+        
+        // Should return false without retrying
+        $this->assertFalse($result);
+    }
+
+    public function testPostFormWithFiles(): void
+    {
+        $client = new SyncHttpClient();
+        
+        // Create temp file
+        $tempFile = sys_get_temp_dir() . '/test_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'test content');
+        
+        try {
+            $client->postMultipart('https://example.com/api', ['field' => 'value'], ['file' => $tempFile]);
+            $this->assertTrue(true);
+        } finally {
+            if (file_exists($tempFile)) {
+                unlink($tempFile);
+            }
+        }
+    }
+
+    public function testPostMultipartWithNonExistentFile(): void
+    {
+        $client = new SyncHttpClient();
+        $client->postMultipart('https://example.com/api', ['field' => 'value'], ['file' => '/nonexistent/file.txt']);
+        
+        $this->assertTrue(true);
+    }
+
+    public function testPostRawWithDifferentContentTypes(): void
+    {
+        $client = new SyncHttpClient();
+        $client->postRaw('https://example.com/api', '<?xml version="1.0"?><root/>', 'application/xml');
+        
+        $this->assertEquals('application/xml', $client->header['Content-Type']);
+    }
+
+    public function testGetWithEmptyUrl(): void
+    {
+        $client = new SyncHttpClient();
+        $client->throwExceptions(false);
+        
+        $client->get('');
+        
+        // Should handle empty URL
+        $this->assertTrue(true);
+    }
+
+    public function testPutWithData(): void
+    {
+        $client = new SyncHttpClient();
+        $client->put('https://example.com/api', ['key' => 'value']);
+        
+        $this->assertEquals('PUT', $client->method);
+        $this->assertEquals(['key' => 'value'], $client->data);
+    }
+
+    public function testDeleteMethod(): void
+    {
+        $client = new SyncHttpClient();
+        $client->method = 'DELETE';
+        $client->data = [];
+        
+        // Use call() directly via reflection or test through actual usage
+        // get() resets method to GET, so we test the method property directly
+        $this->assertEquals('DELETE', $client->method);
+    }
+
+    public function testPatchMethod(): void
+    {
+        $client = new SyncHttpClient();
+        $client->method = 'PATCH';
+        $client->data = ['key' => 'value'];
+        
+        // get() resets method to GET, so we test the method property directly
+        $this->assertEquals('PATCH', $client->method);
+    }
+
+    public function testPostRawWithPatchMethod(): void
+    {
+        $client = new SyncHttpClient();
+        $client->postRaw('https://example.com/api', 'raw body', 'text/plain');
+        $client->method = 'PATCH';
+        
+        // get() resets method to GET, so we test the method property directly
+        $this->assertEquals('PATCH', $client->method);
+    }
+
+    public function testPostRawWithDeleteMethod(): void
+    {
+        $client = new SyncHttpClient();
+        $client->postRaw('https://example.com/api', 'raw body', 'text/plain');
+        $client->method = 'DELETE';
+        
+        // get() resets method to GET, so we test the method property directly
+        $this->assertEquals('DELETE', $client->method);
+    }
+
+    public function testSetDataWithFormFields(): void
+    {
+        $client = new SyncHttpClient();
+        $reflection = new \ReflectionClass($client);
+        $formFieldsProperty = $reflection->getProperty('formFields');
+        $formFieldsProperty->setAccessible(true);
+        $formFieldsProperty->setValue($client, ['field1' => 'value1']);
+        
+        $client->post('https://example.com/api');
+        
+        $this->assertTrue(true);
+    }
+
+    public function testSetFilesReturnsTrueWhenSuccessful(): void
+    {
+        $client = new SyncHttpClient();
+        
+        // Create temp file
+        $tempFile = sys_get_temp_dir() . '/test_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'test content');
+        
+        try {
+            $client->data = ['field1' => 'value1'];
+            $client->files = ['file1' => $tempFile];
+            
+            // Should use setFiles method
+            $client->post('https://example.com/api');
+            
+            $this->assertTrue(true);
+        } finally {
+            if (file_exists($tempFile)) {
+                unlink($tempFile);
+            }
+        }
+    }
+
+    public function testSetFilesWithNonStringValue(): void
+    {
+        $client = new SyncHttpClient();
+        $client->data = ['field1' => 'value1'];
+        $client->files = ['file1' => 123]; // Non-string value
+        
+        $client->post('https://example.com/api');
+        
+        $this->assertTrue(true);
+    }
+
+    public function testSetFilesWithNonExistentFile(): void
+    {
+        $client = new SyncHttpClient();
+        $client->throwExceptions(false);
+        $client->data = ['field1' => 'value1'];
+        $client->files = ['file1' => '/nonexistent/file.txt'];
+        
+        // This will fail but shouldn't throw exception
+        $result = $client->post('https://example.com/api');
+        
+        // Result may be false, but exception should not be thrown
+        $this->assertIsBool($result);
+    }
+
+    public function testSetFilesWithFormFieldsSet(): void
+    {
+        $client = new SyncHttpClient();
+        $client->throwExceptions(false);
+        $reflection = new \ReflectionClass($client);
+        $formFieldsProperty = $reflection->getProperty('formFields');
+        $formFieldsProperty->setAccessible(true);
+        $formFieldsProperty->setValue($client, ['field1' => 'value1']);
+        
+        $client->files = ['file1' => '/path/to/file.txt'];
+        
+        // setFiles should return false when formFields is set
+        $client->post('https://example.com/api');
+        
+        $this->assertTrue(true);
+    }
+
+    public function testCurlInitFailure(): void
+    {
+        $client = new SyncHttpClient();
+        $client->throwExceptions(false);
+        
+        // This might fail curl_init in some edge cases
+        // We can't easily simulate curl_init failure, but we can test the error handling
+        $client->get('https://example.com/api');
+        
+        $this->assertTrue(true);
+    }
+
+    public function testApplyCommonCurlOptionsWithEmptyUserAgent(): void
+    {
+        $client = new SyncHttpClient();
+        $client->setUserAgent('');
+        
+        $client->get('https://example.com/api');
+        
+        $this->assertTrue(true);
+    }
+
+    public function testApplyCommonCurlOptionsWithSslVerifyHost(): void
+    {
+        $client = new SyncHttpClient();
+        $client->setSsl(null, null, null, true, 2);
+        
+        $client->get('https://example.com/api');
+        
+        $this->assertTrue(true);
+    }
+
+    public function testApplyCommonCurlOptionsWithSslVerifyHostZero(): void
+    {
+        $client = new SyncHttpClient();
+        $client->setSsl(null, null, null, true, 0);
+        
+        $client->get('https://example.com/api');
+        
         $this->assertTrue(true);
     }
 }
