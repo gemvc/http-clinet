@@ -3,6 +3,8 @@
 **Multi-Environment PHP HTTP Client Package**  
 Synchronous and Asynchronous API Calls for Apache, Nginx, and Swoole
 
+Part of [Gemvc , a lightweight PHP Framework for microservices](https://gemvc.de) 
+
 ## Overview
 
 A framework-independent HTTP client package providing both synchronous and asynchronous API call capabilities. Automatically adapts to your runtime environment (Apache, Nginx, or Swoole) for optimal performance.
@@ -165,3 +167,7 @@ Contributions welcome! Please follow:
 - PSR-12 coding standards
 - PHPStan Level 9 type safety
 - Comprehensive test coverage
+
+---
+
+Made with ❤️ by Ali Khorsandfard
