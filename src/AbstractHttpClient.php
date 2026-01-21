@@ -3,8 +3,6 @@
 namespace Gemvc\Http\Client;
 
 use Gemvc\Http\Client\Exception\HttpClientException;
-use Gemvc\Http\Client\Exception\NetworkException;
-use Gemvc\Http\Client\Exception\TimeoutException;
 
 /**
  * Abstract base class for HTTP clients
@@ -12,7 +10,7 @@ use Gemvc\Http\Client\Exception\TimeoutException;
  * Provides common configuration properties and methods
  * shared across all HTTP client implementations.
  */
-abstract class AbstractHttpClient implements IHttpClient
+abstract class AbstractHttpClient
 {
     /**
      * Connection timeout in seconds
@@ -88,7 +86,7 @@ abstract class AbstractHttpClient implements IHttpClient
     /**
      * Configure connection and total timeouts (seconds)
      */
-    public function setTimeouts(int $connectTimeout, int $timeout): self
+    public function setTimeouts(int $connectTimeout, int $timeout): static
     {
         $this->connect_timeout = max(0, $connectTimeout);
         $this->timeout = max(0, $timeout);
@@ -97,14 +95,21 @@ abstract class AbstractHttpClient implements IHttpClient
 
     /**
      * Configure SSL client options
+     * 
+     * @param string|null $certPath
+     * @param string|null $keyPath
+     * @param string|null $caPath
+     * @param bool $verifyPeer
+     * @param int $verifyHost
+     * @return static
      */
     public function setSsl(
-        ?string $certPath, 
-        ?string $keyPath, 
-        ?string $caPath = null, 
-        bool $verifyPeer = true, 
+        ?string $certPath,
+        ?string $keyPath,
+        ?string $caPath = null,
+        bool $verifyPeer = true,
         int $verifyHost = 2
-    ): self {
+    ): static {
         $this->ssl_cert = $certPath;
         $this->ssl_key = $keyPath;
         $this->ssl_ca = $caPath;
@@ -116,9 +121,12 @@ abstract class AbstractHttpClient implements IHttpClient
     /**
      * Configure retry behavior
      * 
+     * @param int $maxRetries
+     * @param int $retryDelayMs
      * @param array<int> $retryOnHttpCodes
+     * @return static
      */
-    public function setRetries(int $maxRetries, int $retryDelayMs = 200, array $retryOnHttpCodes = []): self
+    public function setRetries(int $maxRetries, int $retryDelayMs = 200, array $retryOnHttpCodes = []): static
     {
         $this->max_retries = max(0, $maxRetries);
         $this->retry_delay_ms = max(0, $retryDelayMs);
@@ -130,8 +138,10 @@ abstract class AbstractHttpClient implements IHttpClient
 
     /**
      * Enable/disable retry on network errors
+     * 
+     * @return static
      */
-    public function retryOnNetworkError(bool $retry): self
+    public function retryOnNetworkError(bool $retry): static
     {
         $this->retry_on_network_error = $retry;
         return $this;
@@ -139,44 +149,13 @@ abstract class AbstractHttpClient implements IHttpClient
 
     /**
      * Set custom user agent
+     * 
+     * @return static
      */
-    public function setUserAgent(string $userAgent): self
+    public function setUserAgent(string $userAgent): static
     {
         $this->userAgent = $userAgent;
         return $this;
-    }
-
-    /**
-     * Apply common cURL options to a handle
-     * 
-     * @param \CurlHandle $ch
-     */
-    protected function applyCommonCurlOptions(\CurlHandle $ch): void
-    {
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        if ($this->userAgent !== '') {
-            curl_setopt($ch, CURLOPT_USERAGENT, $this->userAgent);
-        }
-
-        if ($this->connect_timeout > 0) {
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $this->connect_timeout);
-        }
-        if ($this->timeout > 0) {
-            curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
-        }
-
-        // SSL options
-        if ($this->ssl_cert) {
-            curl_setopt($ch, CURLOPT_SSLCERT, $this->ssl_cert);
-        }
-        if ($this->ssl_key) {
-            curl_setopt($ch, CURLOPT_SSLKEY, $this->ssl_key);
-        }
-        if ($this->ssl_ca) {
-            curl_setopt($ch, CURLOPT_CAINFO, $this->ssl_ca);
-        }
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $this->ssl_verify_peer);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $this->ssl_verify_host ? 2 : 0);
     }
 
     /**
@@ -193,7 +172,7 @@ abstract class AbstractHttpClient implements IHttpClient
         }
 
         return ($this->retry_on_network_error && $error !== '') ||
-               in_array($httpCode, $this->retry_on_http_codes, true);
+            in_array($httpCode, $this->retry_on_http_codes, true);
     }
 
     /**
@@ -207,174 +186,12 @@ abstract class AbstractHttpClient implements IHttpClient
     }
 
     /**
-     * Check if a cURL error code indicates a timeout
-     * 
-     * @param int $curlErrorCode cURL error code
-     * @return bool True if it's a timeout error
-     */
-    protected function isTimeoutError(int $curlErrorCode): bool
-    {
-        return in_array($curlErrorCode, [
-            CURLE_OPERATION_TIMEDOUT,
-            CURLE_OPERATION_TIMEOUTED,
-        ], true);
-    }
-
-    /**
-     * Check if a cURL error code indicates a connection timeout
-     * 
-     * @param int $curlErrorCode cURL error code
-     * @return bool True if it's a connection timeout
-     */
-    protected function isConnectionTimeoutError(int $curlErrorCode): bool
-    {
-        return $curlErrorCode === CURLE_OPERATION_TIMEDOUT;
-    }
-
-    /**
-     * Check if a cURL error code indicates a network error
-     * 
-     * @param int $curlErrorCode cURL error code
-     * @return bool True if it's a network error
-     */
-    protected function isNetworkError(int $curlErrorCode): bool
-    {
-        return in_array($curlErrorCode, [
-            CURLE_COULDNT_RESOLVE_HOST,
-            CURLE_COULDNT_CONNECT,
-            CURLE_COULDNT_RESOLVE_PROXY,
-            CURLE_RECV_ERROR,
-            CURLE_SEND_ERROR,
-            CURLE_PARTIAL_FILE,
-            CURLE_HTTP_POST_ERROR,
-            CURLE_SSL_CONNECT_ERROR,
-            CURLE_GOT_NOTHING,
-        ], true);
-    }
-
-    /**
-     * Get the network error type from cURL error code
-     * 
-     * @param int $curlErrorCode cURL error code
-     * @return string Network error type constant
-     */
-    protected function getNetworkErrorType(int $curlErrorCode): string
-    {
-        return match ($curlErrorCode) {
-            CURLE_COULDNT_RESOLVE_HOST,
-            CURLE_COULDNT_RESOLVE_PROXY => NetworkException::TYPE_DNS_ERROR,
-            CURLE_COULDNT_CONNECT => NetworkException::TYPE_CONNECTION_ERROR,
-            CURLE_SSL_CONNECT_ERROR => NetworkException::TYPE_SSL_ERROR,
-            CURLE_RECV_ERROR,
-            CURLE_PARTIAL_FILE,
-            CURLE_GOT_NOTHING => NetworkException::TYPE_RECEIVE_ERROR,
-            CURLE_SEND_ERROR,
-            CURLE_HTTP_POST_ERROR => NetworkException::TYPE_SEND_ERROR,
-            default => NetworkException::TYPE_UNKNOWN,
-        };
-    }
-
-    /**
-     * Get human-readable description of network error type
-     * 
-     * @param string $errorType Network error type constant
-     * @return string Description
-     */
-    protected function getNetworkErrorTypeDescription(string $errorType): string
-    {
-        return match ($errorType) {
-            NetworkException::TYPE_DNS_ERROR => 'DNS resolution failed',
-            NetworkException::TYPE_CONNECTION_ERROR => 'Connection failed',
-            NetworkException::TYPE_SSL_ERROR => 'SSL/TLS handshake failed',
-            NetworkException::TYPE_RECEIVE_ERROR => 'Data receive error',
-            NetworkException::TYPE_SEND_ERROR => 'Data send error',
-            default => 'Unknown network error',
-        };
-    }
-
-    /**
-     * Create appropriate exception based on error type
-     * 
-     * @param string $url Request URL
-     * @param string $errorMessage Error message
-     * @param int $httpCode HTTP response code
-     * @param int $curlErrorCode cURL error code
-     * @return HttpClientException
-     */
-    protected function createException(
-        string $url,
-        string $errorMessage,
-        int $httpCode = 0,
-        int $curlErrorCode = 0
-    ): HttpClientException {
-        // Timeout errors
-        if ($this->isTimeoutError($curlErrorCode)) {
-            $isConnectionTimeout = $this->isConnectionTimeoutError($curlErrorCode);
-            $timeoutType = $isConnectionTimeout ? 'connection' : 'request';
-            $message = $errorMessage ?: "Request to {$url} timed out ({$timeoutType} timeout)";
-            
-            return new TimeoutException(
-                $message,
-                0,
-                null,
-                $url,
-                $httpCode,
-                $curlErrorCode,
-                $isConnectionTimeout
-            );
-        }
-
-        // Network errors
-        if ($this->isNetworkError($curlErrorCode)) {
-            $errorType = $this->getNetworkErrorType($curlErrorCode);
-            $typeDescription = $this->getNetworkErrorTypeDescription($errorType);
-            $message = $errorMessage ?: "Network error occurred while requesting {$url} ({$typeDescription})";
-            
-            return new NetworkException(
-                $message,
-                0,
-                null,
-                $url,
-                $httpCode,
-                $curlErrorCode,
-                $errorType
-            );
-        }
-
-        // Note: HTTP error codes (4xx, 5xx) are valid responses, not exceptions
-        // They should be handled by checking the HTTP code in the response
-
-        // Generic error
-        $message = $errorMessage ?: "Error occurred while requesting {$url}";
-        
-        return new HttpClientException(
-            $message,
-            0,
-            null,
-            $url,
-            $httpCode,
-            $curlErrorCode
-        );
-    }
-
-    /**
-     * Get cURL error code from a cURL handle
-     * 
-     * @param \CurlHandle $ch
-     * @return int cURL error code (0 if no error)
-     */
-    protected function getCurlErrorCode(\CurlHandle $ch): int
-    {
-        return curl_errno($ch);
-    }
-
-    /**
      * Add an error/exception to the errors array
      * 
      * @param HttpClientException $exception
-     * @return self
+     * @return static
      */
-    protected function addError(HttpClientException $exception): self
+    protected function addError(HttpClientException $exception): static
     {
         $this->errors[] = $exception;
         return $this;
@@ -383,9 +200,9 @@ abstract class AbstractHttpClient implements IHttpClient
     /**
      * Clear all stored errors
      * 
-     * @return self
+     * @return static
      */
-    public function clearErrors(): self
+    public function clearErrors(): static
     {
         $this->errors = [];
         return $this;
@@ -420,5 +237,4 @@ abstract class AbstractHttpClient implements IHttpClient
     {
         return !empty($this->errors) ? end($this->errors) : null;
     }
-
 }

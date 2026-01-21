@@ -1,5 +1,28 @@
 # Release Notes
 
+## Version 1.2.0 - January 21, 2026
+
+**Native Swoole Coroutines & Architectural Refactoring** - This release brings true native performance for Swoole environments and cleans up the internal architecture.
+
+### What's New
+
+#### 🚀 Native Swoole Support
+- **`SwooleHttpClient`** has been completely rewritten to use `Swoole\Coroutine\Http\Client` directly.
+- **True Non-Blocking**: No longer relies on cURL hooks; uses lightweight Swoole coroutines.
+- **`fireAndForget()`**: Now spawns a genuine background coroutine using `go()`, ensuring zero blocking for background tasks.
+- **Concurrent Execution**: Uses `Swoole\Coroutine\Barrier` and `Channel` for efficient concurrent request processing.
+
+#### 🏗️ Architectural Improvements
+- **Decoupled cURL**: cURL-specific logic has been moved out of `AbstractHttpClient` into a reusable `CurlClientTrait`.
+- **Cleaner Inheritance**: `AbstractHttpClient` is now a pure base class for state and configuration, making it easier to implement non-cURL clients (like the new Swoole client).
+- **Type Safety**: Achieved **PHPStan Level 9** compliance across the entire package.
+
+#### 🧪 Testing & Stability
+- Added **Swoole Stubs** to allow running static analysis and unit tests on Windows/macOS where the Swoole extension might be missing.
+- Improved test coverage and reliability.
+
+---
+
 ## Version 1.1.0 - January 18, 2026
 
 **Enhanced Error Handling & Code Organization** - This release introduces significant improvements to error handling, code organization, and developer experience.
@@ -45,9 +68,9 @@
 #### Error Handling Without Try-Catch
 
 ```php
-use Gemvc\Http\Client\SyncHttpClient;
+use Gemvc\Http\Client\HttpClient;
 
-$client = new SyncHttpClient();
+$client = new HttpClient();
 $client->throwExceptions(false); // Store errors instead of throwing
 
 $response = $client->get('https://api.example.com/data');
@@ -74,10 +97,10 @@ $client->clearErrors();
 #### Network Error Classification
 
 ```php
-use Gemvc\Http\Client\SyncHttpClient;
+use Gemvc\Http\Client\HttpClient;
 use Gemvc\Http\Client\Exception\NetworkException;
 
-$client = new SyncHttpClient();
+$client = new HttpClient();
 
 try {
     $client->get('https://api.example.com/data');
@@ -155,8 +178,8 @@ if ($async->hasErrors()) {
 
 #### Core Components
 - **`IHttpClient`** interface for common HTTP client methods
-- **`SyncHttpClient`** - Synchronous HTTP client for Apache/Nginx environments
-- **`SwooleSyncHttpClient`** - Swoole-optimized synchronous HTTP client
+- **`HttpClient`** - Synchronous HTTP client for Apache/Nginx environments
+- **`SwooleHttpClient`** - Swoole-optimized synchronous HTTP client
 - **`AsyncHttpClient`** - Asynchronous HTTP client for Apache/Nginx environments
 - **`SwooleAsyncHttpClient`** - Swoole-optimized asynchronous HTTP client
 

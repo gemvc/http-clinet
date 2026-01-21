@@ -7,7 +7,7 @@ use Gemvc\Http\Client\Exception\NetworkException;
 use Gemvc\Http\Client\Exception\TimeoutException;
 
 /**
- * Synchronous HTTP Client for Apache/Nginx environments
+ * Synchronous HTTP Client (Blocked API calls) for Apache/Nginx environments
  * 
  * Uses cURL for synchronous HTTP requests with support for:
  * - GET, POST, PUT requests
@@ -16,8 +16,9 @@ use Gemvc\Http\Client\Exception\TimeoutException;
  * - Retry logic with exponential backoff
  * - Configurable timeouts
  */
-class SyncHttpClient extends AbstractHttpClient
+class HttpClient extends AbstractHttpClient implements IHttpClient
 {
+    use CurlClientTrait;
     /**
      * Last cURL error message (empty string if none).
      * Defaults to 'call not initialized' until call() runs.
@@ -105,7 +106,7 @@ class SyncHttpClient extends AbstractHttpClient
         $this->connect_timeout = 0;
         $this->timeout = 0;
         $this->userAgent = 'gemserver';
-        
+
         // Initialize legacy public properties
         $this->error = 'call not initialized';
         $this->http_response_code = 0;
@@ -237,10 +238,10 @@ class SyncHttpClient extends AbstractHttpClient
                     500,
                     0
                 );
-                
+
                 // Store exception in errors array
                 $this->addError($exception);
-                
+
                 if ($this->throwExceptions) {
                     throw $exception;
                 }
@@ -257,7 +258,7 @@ class SyncHttpClient extends AbstractHttpClient
             $this->setFiles($ch);
 
             $this->responseBody = curl_exec($ch);
-            $this->http_response_code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $this->http_response_code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $this->error = curl_error($ch);
             $curlErrorCode = $this->getCurlErrorCode($ch);
 
@@ -275,7 +276,7 @@ class SyncHttpClient extends AbstractHttpClient
                     $curlErrorCode
                 );
                 $lastException = $exception;
-                
+
                 // Store exception in errors array
                 $this->addError($exception);
 
@@ -303,7 +304,7 @@ class SyncHttpClient extends AbstractHttpClient
             if (!in_array($lastException, $this->errors, true)) {
                 $this->addError($lastException);
             }
-            
+
             if ($this->throwExceptions) {
                 throw $lastException;
             }

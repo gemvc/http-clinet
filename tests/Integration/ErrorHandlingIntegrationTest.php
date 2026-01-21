@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
-use Gemvc\Http\Client\SyncHttpClient;
+use Gemvc\Http\Client\HttpClient;
 use Gemvc\Http\Client\AsyncHttpClient;
 use Gemvc\Http\Client\Exception\HttpClientException;
 use Gemvc\Http\Client\Exception\NetworkException;
@@ -15,7 +15,7 @@ class ErrorHandlingIntegrationTest extends TestCase
 {
     public function testSyncClientStoresNetworkException(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
@@ -31,7 +31,7 @@ class ErrorHandlingIntegrationTest extends TestCase
 
     public function testSyncClientExceptionContainsFullContext(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $url = 'https://invalid-domain-that-does-not-exist-xyz123.com/api';
@@ -85,7 +85,7 @@ class ErrorHandlingIntegrationTest extends TestCase
 
     public function testErrorClearingBetweenRequests(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
@@ -101,7 +101,7 @@ class ErrorHandlingIntegrationTest extends TestCase
 
     public function testRetryLogicStoresMultipleErrors(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         $client->setRetries(2, 10, []);
         $client->retryOnNetworkError(true);
@@ -114,7 +114,7 @@ class ErrorHandlingIntegrationTest extends TestCase
 
     public function testExceptionTypesAreCorrectlyIdentified(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
@@ -135,7 +135,7 @@ class ErrorHandlingIntegrationTest extends TestCase
 
     public function testNetworkExceptionHelperMethods(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
@@ -156,7 +156,7 @@ class ErrorHandlingIntegrationTest extends TestCase
 
     public function testTimeoutExceptionHelperMethod(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         $client->setTimeouts(1, 1);
         

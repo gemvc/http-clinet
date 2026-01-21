@@ -14,8 +14,9 @@ use Gemvc\Http\Client\Exception\HttpClientException;
  * - Response callbacks
  * - All request types (GET, POST, PUT, form, multipart, raw)
  */
-class AsyncHttpClient extends AbstractHttpClient
+class AsyncHttpClient extends AbstractHttpClient implements IHttpClient
 {
+    use CurlClientTrait;
     /**
      * Pending requests queue
      * 
@@ -271,9 +272,9 @@ class AsyncHttpClient extends AbstractHttpClient
             while ($activeRequests < $this->maxConcurrency && $queueIndex < count($this->requestQueue)) {
                 $request = $this->requestQueue[$queueIndex];
                 $ch = $this->createCurlHandle($request);
-                
+
                 if ($ch !== false) {
-                    $handleId = (int)$ch;
+                    $handleId = (int) $ch;
                     $handleMap[$handleId] = $request['id'];
                     $this->requestMetadata[$handleId] = [
                         'id' => $request['id'],
@@ -293,7 +294,7 @@ class AsyncHttpClient extends AbstractHttpClient
                         0
                     );
                     $this->addError($exception);
-                    
+
                     // Add error result for this request
                     $results[$request['id']] = [
                         'success' => false,
@@ -318,7 +319,7 @@ class AsyncHttpClient extends AbstractHttpClient
                 while ($info = curl_multi_info_read($multiHandle)) {
                     if ($info['msg'] === CURLMSG_DONE) {
                         $ch = $info['handle'];
-                        $handleId = (int)$ch;
+                        $handleId = (int) $ch;
                         $requestId = $handleMap[$handleId] ?? 'unknown';
 
                         $result = $this->processResponse($ch, $requestId, $handleId);
@@ -365,10 +366,7 @@ class AsyncHttpClient extends AbstractHttpClient
      * 
      * This method is perfect for APM logging, analytics, or any non-critical
      * background tasks. It will NOT block your main application response.
-     * 
      * For Apache/Nginx: Uses fastcgi_finish_request() to send response first
-     * For OpenSwoole: Executes in background task
-     * 
      * @return bool True if background execution was initiated
      */
     public function fireAndForget(): bool
@@ -384,48 +382,33 @@ class AsyncHttpClient extends AbstractHttpClient
             // Try to send response to client immediately (if not already sent)
             // This is safe to call even if response was already sent
             @fastcgi_finish_request();
-            
+
             // Now execute requests in background (client already got or getting response)
             $this->executeAll();
             return true;
         }
 
-        // For OpenSwoole: Use task worker (if available)
-        if (function_exists('swoole_async_write') || class_exists('\Swoole\Server')) {
-            // Execute in background using Swoole task
-            $this->executeInBackground();
-            return true;
-        }
+
 
         // Fallback: Execute with very short timeout and minimal blocking
         // Set aggressive timeouts to minimize blocking
         $originalTimeout = $this->timeout;
         $originalConnectTimeout = $this->connect_timeout;
-        
+
         $this->timeout = 1; // 1 second max
         $this->connect_timeout = 1; // 1 second max
-        
+
         // Execute but don't wait for all results
         $this->executeAll();
-        
+
         // Restore original timeouts
         $this->timeout = $originalTimeout;
         $this->connect_timeout = $originalConnectTimeout;
-        
+
         return true;
     }
 
-    /**
-     * Execute requests in background using Swoole task (if available)
-     * 
-     * @return void
-     */
-    private function executeInBackground(): void
-    {
-        // This would require access to Swoole server instance
-        // For now, execute with minimal blocking
-        $this->executeAll();
-    }
+
 
     /**
      * Clear the request queue
@@ -530,7 +513,7 @@ class AsyncHttpClient extends AbstractHttpClient
     private function processResponse(\CurlHandle $ch, string $requestId, int $handleId): array
     {
         $body = curl_exec($ch);
-        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
         $curlErrorCode = $this->getCurlErrorCode($ch);
         $metadata = $this->requestMetadata[$handleId] ?? null;
@@ -542,7 +525,7 @@ class AsyncHttpClient extends AbstractHttpClient
         $hasNetworkError = !is_string($body) || $error !== '';
         $success = is_string($body) && $error === '' && $httpCode >= 200 && $httpCode < 400;
         $responseBody = is_string($body) ? $body : false;
-        
+
         // Create exception only for network/timeout errors, not HTTP error codes
         $exception = null;
         $exceptionType = null;
@@ -554,11 +537,11 @@ class AsyncHttpClient extends AbstractHttpClient
                 $curlErrorCode
             );
             $exceptionType = get_class($exception);
-            
+
             // Store exception in errors array
             $this->addError($exception);
         }
-        
+
         return [
             'success' => $success,
             'body' => $responseBody,

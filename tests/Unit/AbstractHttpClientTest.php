@@ -5,20 +5,20 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Gemvc\Http\Client\SyncHttpClient;
+use Gemvc\Http\Client\HttpClient;
 use Gemvc\Http\Client\Exception\NetworkException;
 use Gemvc\Http\Client\Exception\TimeoutException;
 use Gemvc\Http\Client\Exception\HttpClientException;
 
 /**
  * Tests for AbstractHttpClient functionality
- * Tested through SyncHttpClient which extends AbstractHttpClient
+ * Tested through HttpClient which extends AbstractHttpClient
  */
 class AbstractHttpClientTest extends TestCase
 {
     public function testSetUserAgent(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $result = $client->setUserAgent('MyCustomAgent/1.0');
         
         $this->assertSame($client, $result);
@@ -26,7 +26,7 @@ class AbstractHttpClientTest extends TestCase
 
     public function testClearErrors(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
@@ -39,7 +39,7 @@ class AbstractHttpClientTest extends TestCase
 
     public function testHasErrors(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $this->assertFalse($client->hasErrors());
         
         $client->throwExceptions(false);
@@ -49,7 +49,7 @@ class AbstractHttpClientTest extends TestCase
 
     public function testGetErrors(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
@@ -61,7 +61,7 @@ class AbstractHttpClientTest extends TestCase
 
     public function testGetLastError(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $this->assertNull($client->getLastError());
         
         $client->throwExceptions(false);
@@ -74,7 +74,7 @@ class AbstractHttpClientTest extends TestCase
 
     public function testErrorsPropertyAccess(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $this->assertIsArray($client->errors);
         $this->assertEmpty($client->errors);
         
@@ -93,7 +93,7 @@ class AbstractHttpClientTest extends TestCase
 
     public function testRetryLogicWithNetworkError(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         $client->setRetries(2, 10, []);
         $client->retryOnNetworkError(true);
@@ -106,7 +106,7 @@ class AbstractHttpClientTest extends TestCase
 
     public function testRetryLogicDisabled(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         $client->setRetries(0, 10, []);
         $client->retryOnNetworkError(false);
@@ -119,7 +119,7 @@ class AbstractHttpClientTest extends TestCase
 
     public function testSslConfiguration(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $result = $client->setSsl(
             '/path/to/cert.pem',
             '/path/to/key.pem',
@@ -133,7 +133,7 @@ class AbstractHttpClientTest extends TestCase
 
     public function testSslConfigurationWithNulls(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->setSsl(null, null, null, true, 2);
         
         $this->assertTrue(true);
@@ -141,7 +141,7 @@ class AbstractHttpClientTest extends TestCase
 
     public function testSetRetriesWithEmptyArray(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->setRetries(3, 200, []);
         
         // Should use default retry codes
@@ -150,7 +150,7 @@ class AbstractHttpClientTest extends TestCase
 
     public function testSetRetriesWithZeroDelay(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->setRetries(2, 0, [500, 502]);
         
         $this->assertTrue(true);
@@ -158,7 +158,7 @@ class AbstractHttpClientTest extends TestCase
 
     public function testSetRetriesWithNegativeValues(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->setRetries(-1, -100, []);
         
         // Should clamp to 0

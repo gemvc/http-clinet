@@ -5,30 +5,28 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Gemvc\Http\Client\SyncHttpClient;
+use Gemvc\Http\Client\HttpClient;
 use Gemvc\Http\Client\Exception\HttpClientException;
 use Gemvc\Http\Client\Exception\NetworkException;
-use Gemvc\Http\Client\Exception\TimeoutException;
 
-class SyncHttpClientExceptionTest extends TestCase
+class HttpClientExceptionTest extends TestCase
 {
     public function testThrowsNetworkExceptionOnDnsError(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(true);
-        
+
         $this->expectException(NetworkException::class);
-        
+
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
     }
 
     public function testThrowsExceptionWithCorrectContext(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(true);
-        
+        $url = 'https://invalid-domain-that-does-not-exist-xyz123.com/api';
         try {
-            $url = 'https://invalid-domain-that-does-not-exist-xyz123.com/api';
             $client->get($url);
             $this->fail('Expected exception was not thrown');
         } catch (HttpClientException $e) {
@@ -39,9 +37,9 @@ class SyncHttpClientExceptionTest extends TestCase
 
     public function testExceptionStoredEvenWhenThrown(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(true);
-        
+
         try {
             $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
         } catch (HttpClientException $e) {
@@ -53,26 +51,26 @@ class SyncHttpClientExceptionTest extends TestCase
 
     public function testMultipleErrorsAccumulated(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         $client->setRetries(1, 10, []);
-        
+
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
-        
+
         // Should have multiple errors from retries
         $this->assertGreaterThanOrEqual(1, count($client->errors));
     }
 
     public function testJsonEncodingErrorThrowsException(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(true);
-        
+
         // Create data that cannot be JSON encoded - use a circular reference
         $circular = [];
         $circular['self'] = &$circular;
         $client->data = $circular;
-        
+
         // This should throw an exception when trying to encode
         try {
             $client->post('https://httpbin.org/post');
@@ -95,12 +93,12 @@ class SyncHttpClientExceptionTest extends TestCase
 
     public function testExceptionContainsRequestUrl(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
-        
+
         $url = 'https://invalid-domain-that-does-not-exist-xyz123.com/api';
         $client->get($url);
-        
+
         $error = $client->getLastError();
         $this->assertNotNull($error);
         $this->assertEquals($url, $error->getUrl());
@@ -108,11 +106,11 @@ class SyncHttpClientExceptionTest extends TestCase
 
     public function testExceptionContainsHttpCode(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
-        
+
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
-        
+
         $error = $client->getLastError();
         $this->assertNotNull($error);
         // HTTP code might be 0 for network errors
@@ -121,11 +119,11 @@ class SyncHttpClientExceptionTest extends TestCase
 
     public function testExceptionContainsCurlErrorCode(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
-        
+
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
-        
+
         $error = $client->getLastError();
         $this->assertNotNull($error);
         $this->assertGreaterThan(0, $error->getCurlErrorCode());

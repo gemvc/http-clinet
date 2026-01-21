@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
-use Gemvc\Http\Client\SyncHttpClient;
+use Gemvc\Http\Client\HttpClient;
 
-class SyncHttpClientIntegrationTest extends TestCase
+class HttpClientIntegrationTest extends TestCase
 {
     public function testGetRequest(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->setTimeouts(5, 10);
         
         $response = $client->get('https://httpbin.org/get', ['test' => 'value']);
@@ -23,7 +23,7 @@ class SyncHttpClientIntegrationTest extends TestCase
     
     public function testPostRequest(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->setTimeouts(5, 10);
         
         $response = $client->post('https://httpbin.org/post', ['name' => 'test']);

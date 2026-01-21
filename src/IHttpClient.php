@@ -15,9 +15,9 @@ interface IHttpClient
      * 
      * @param int $connectTimeout Connection timeout in seconds
      * @param int $timeout Total request timeout in seconds
-     * @return self
+     * @return static
      */
-    public function setTimeouts(int $connectTimeout, int $timeout): self;
+    public function setTimeouts(int $connectTimeout, int $timeout): static;
 
     /**
      * Configure SSL client options
@@ -27,9 +27,9 @@ interface IHttpClient
      * @param string|null $caPath CA certificate path
      * @param bool $verifyPeer Verify peer certificate (default: true)
      * @param int $verifyHost Verify host (0, 1, or 2, default: 2)
-     * @return self
+     * @return static
      */
-    public function setSsl(?string $certPath, ?string $keyPath, ?string $caPath = null, bool $verifyPeer = true, int $verifyHost = 2): self;
+    public function setSsl(?string $certPath, ?string $keyPath, ?string $caPath = null, bool $verifyPeer = true, int $verifyHost = 2): static;
 
     /**
      * Configure retry behavior
@@ -37,15 +37,15 @@ interface IHttpClient
      * @param int $maxRetries Maximum number of retry attempts
      * @param int $retryDelayMs Delay between retries in milliseconds
      * @param array<int> $retryOnHttpCodes HTTP status codes that trigger a retry
-     * @return self
+     * @return static
      */
-    public function setRetries(int $maxRetries, int $retryDelayMs = 200, array $retryOnHttpCodes = []): self;
+    public function setRetries(int $maxRetries, int $retryDelayMs = 200, array $retryOnHttpCodes = []): static;
 
     /**
      * Enable/disable retry on network errors
      * 
      * @param bool $retry Whether to retry on network errors
-     * @return self
+     * @return static
      */
-    public function retryOnNetworkError(bool $retry): self;
+    public function retryOnNetworkError(bool $retry): static;
 }

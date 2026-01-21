@@ -5,19 +5,19 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Gemvc\Http\Client\SyncHttpClient;
+use Gemvc\Http\Client\HttpClient;
 use Gemvc\Http\Client\Exception\NetworkException;
 use Gemvc\Http\Client\Exception\TimeoutException;
 
 /**
  * Tests for AbstractHttpClient error detection and exception creation
- * Tested through SyncHttpClient which extends AbstractHttpClient
+ * Tested through HttpClient which extends AbstractHttpClient
  */
 class AbstractHttpClientErrorDetectionTest extends TestCase
 {
     public function testCreateExceptionForTimeoutError(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         // Simulate timeout by using very short timeout
@@ -34,7 +34,7 @@ class AbstractHttpClientErrorDetectionTest extends TestCase
 
     public function testCreateExceptionForNetworkError(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
@@ -50,7 +50,7 @@ class AbstractHttpClientErrorDetectionTest extends TestCase
 
     public function testCreateExceptionForGenericError(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         // This should create a generic HttpClientException
@@ -62,7 +62,7 @@ class AbstractHttpClientErrorDetectionTest extends TestCase
 
     public function testExceptionCreationWithAllContext(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $url = 'https://invalid-domain-that-does-not-exist-xyz123.com/api';
@@ -77,7 +77,7 @@ class AbstractHttpClientErrorDetectionTest extends TestCase
 
     public function testNetworkExceptionErrorTypes(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
@@ -102,7 +102,7 @@ class AbstractHttpClientErrorDetectionTest extends TestCase
 
     public function testTimeoutExceptionIsConnectionTimeout(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         $client->setTimeouts(1, 1);
         
@@ -117,7 +117,7 @@ class AbstractHttpClientErrorDetectionTest extends TestCase
 
     public function testRetryLogicWithHttpCodes(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         $client->setRetries(1, 10, [500, 502, 503]);
         $client->retryOnNetworkError(false);
@@ -131,7 +131,7 @@ class AbstractHttpClientErrorDetectionTest extends TestCase
 
     public function testRetryLogicWithNetworkErrors(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         $client->setRetries(1, 10, []);
         $client->retryOnNetworkError(true);
@@ -144,7 +144,7 @@ class AbstractHttpClientErrorDetectionTest extends TestCase
 
     public function testWaitForRetryWithZeroDelay(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         $client->setRetries(1, 0, []);
         $client->retryOnNetworkError(true);

@@ -14,7 +14,7 @@ A framework-independent HTTP client package providing both synchronous and async
 - ✅ **Synchronous API calls** with retry logic and SSL support
 - ✅ **Asynchronous concurrent requests** with configurable concurrency
 - ✅ **Enhanced error handling** with exception storage and classification
-- ✅ **Environment-aware execution** - optimized for each runtime
+- ✅ **Environment-aware execution** - optimized for each runtime (Native Coroutines for Swoole)
 - ✅ **Framework-independent** - use in any PHP project
 - ✅ **Backward compatible** with GEMVC framework
 
@@ -26,7 +26,7 @@ composer require gemvc/http-client
 
 ## Requirements
 
-- PHP 8.1 or higher
+- PHP 8.2 or higher
 - cURL extension
 - OpenSwoole extension (optional, for optimized async in Swoole)
 
@@ -35,9 +35,9 @@ composer require gemvc/http-client
 ### Synchronous Client
 
 ```php
-use Gemvc\Http\Client\SyncHttpClient;
+use Gemvc\Http\Client\HttpClient;
 
-$client = new SyncHttpClient();
+$client = new HttpClient();
 $client->setTimeouts(10, 30)
        ->setRetries(3, 200, [500, 502, 503]);
 
@@ -105,14 +105,13 @@ $apm->setTimeouts(2, 5)
 
 The package provides environment-specific implementations:
 
-- **SyncHttpClient** - Apache/Nginx synchronous implementation
-- **SwooleSyncHttpClient** - Swoole-optimized synchronous implementation
+- **HttpClient** - Apache/Nginx synchronous implementation
 - **AsyncHttpClient** - Apache/Nginx asynchronous implementation
-- **SwooleAsyncHttpClient** - Swoole-optimized asynchronous implementation
+- **SwooleHttpClient** - Native Swoole implementation using Coroutines (no cURL dependency)
 
 ## API Reference
 
-### SyncHttpClient Methods
+### HttpClient Methods
 
 ```php
 // HTTP Methods
@@ -200,7 +199,7 @@ The package provides comprehensive error handling with automatic exception class
 All exceptions are automatically stored in the `$errors` array property, allowing you to inspect errors without try-catch blocks:
 
 ```php
-$client = new SyncHttpClient();
+$client = new HttpClient();
 $client->throwExceptions(false); // Store errors instead of throwing
 
 $response = $client->get('https://api.example.com/data');

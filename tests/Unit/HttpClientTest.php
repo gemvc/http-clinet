@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Gemvc\Http\Client\SyncHttpClient;
+use Gemvc\Http\Client\HttpClient;
 
-class SyncHttpClientTest extends TestCase
+class HttpClientTest extends TestCase
 {
     // ============================================
     // Constructor Tests
@@ -15,9 +15,9 @@ class SyncHttpClientTest extends TestCase
     
     public function testConstructor(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         
-        $this->assertInstanceOf(SyncHttpClient::class, $client);
+        $this->assertInstanceOf(HttpClient::class, $client);
         $this->assertEquals('call not initialized', $client->error);
         $this->assertEquals(0, $client->http_response_code);
         $this->assertIsArray($client->data);
@@ -34,16 +34,16 @@ class SyncHttpClientTest extends TestCase
     
     public function testSetTimeouts(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $result = $client->setTimeouts(5, 10);
         
-        $this->assertInstanceOf(SyncHttpClient::class, $result);
+        $this->assertInstanceOf(HttpClient::class, $result);
         $this->assertEquals($client, $result); // Should return self for chaining
     }
     
     public function testSetTimeoutsWithZeroValues(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->setTimeouts(0, 0);
         
         // Should accept zero values (legacy behavior)
@@ -52,7 +52,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testSetTimeoutsWithNegativeValues(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->setTimeouts(-5, -10);
         
         // Should clamp to 0
@@ -61,41 +61,41 @@ class SyncHttpClientTest extends TestCase
     
     public function testSetSsl(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $result = $client->setSsl('/path/to/cert.pem', '/path/to/key.pem', '/path/to/ca.pem', true, 2);
         
-        $this->assertInstanceOf(SyncHttpClient::class, $result);
+        $this->assertInstanceOf(HttpClient::class, $result);
         $this->assertEquals($client, $result);
     }
     
     public function testSetSslWithNullValues(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $result = $client->setSsl(null, null, null, false, 0);
         
-        $this->assertInstanceOf(SyncHttpClient::class, $result);
+        $this->assertInstanceOf(HttpClient::class, $result);
     }
     
     public function testSetRetries(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $result = $client->setRetries(3, 500, [429, 500, 502]);
         
-        $this->assertInstanceOf(SyncHttpClient::class, $result);
+        $this->assertInstanceOf(HttpClient::class, $result);
         $this->assertEquals($client, $result);
     }
     
     public function testSetRetriesWithEmptyArray(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $result = $client->setRetries(2, 300, []);
         
-        $this->assertInstanceOf(SyncHttpClient::class, $result);
+        $this->assertInstanceOf(HttpClient::class, $result);
     }
     
     public function testSetRetriesWithZeroRetries(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->setRetries(0, 200, []);
         
         // Should accept zero (no retries)
@@ -104,19 +104,19 @@ class SyncHttpClientTest extends TestCase
     
     public function testRetryOnNetworkError(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $result = $client->retryOnNetworkError(true);
         
-        $this->assertInstanceOf(SyncHttpClient::class, $result);
+        $this->assertInstanceOf(HttpClient::class, $result);
         $this->assertEquals($client, $result);
     }
     
     public function testRetryOnNetworkErrorDisable(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $result = $client->retryOnNetworkError(false);
         
-        $this->assertInstanceOf(SyncHttpClient::class, $result);
+        $this->assertInstanceOf(HttpClient::class, $result);
     }
     
     // ============================================
@@ -125,7 +125,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testGetMethod(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         
         // Test that method is set correctly
         $this->assertEquals('GET', $client->method);
@@ -139,7 +139,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testGetWithQueryParams(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         
         // get() should append query params to URL
         $client->get('https://example.com/api', ['id' => 1, 'name' => 'test']);
@@ -150,7 +150,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testPostMethod(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->post('https://example.com/api', ['name' => 'John']);
         
         $this->assertEquals('POST', $client->method);
@@ -159,7 +159,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testPostClearsRawBody(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->postRaw('https://example.com/api', 'raw body', 'text/plain');
         $client->post('https://example.com/api', ['data' => 'value']);
         
@@ -173,7 +173,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testPutMethod(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->put('https://example.com/api', ['name' => 'Updated']);
         
         $this->assertEquals('PUT', $client->method);
@@ -186,7 +186,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testPostForm(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         // Don't actually make HTTP request, just test method configuration
         $client->method = 'GET'; // Reset to verify it changes
         $client->postForm('https://example.com/api', ['field1' => 'value1']);
@@ -201,7 +201,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testPostFormWithEmptyFields(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $result = $client->postForm('https://example.com/api', []);
         
         $this->assertEquals('POST', $client->method);
@@ -209,7 +209,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testPostMultipart(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $result = $client->postMultipart('https://example.com/api', ['field' => 'value'], ['file' => '/tmp/test.txt']);
         
         $this->assertEquals('POST', $client->method);
@@ -218,7 +218,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testPostMultipartWithEmptyData(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $result = $client->postMultipart('https://example.com/api', [], []);
         
         $this->assertEquals('POST', $client->method);
@@ -226,7 +226,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testPostRaw(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $result = $client->postRaw('https://example.com/api', 'raw body content', 'text/plain');
         
         $this->assertEquals('POST', $client->method);
@@ -236,7 +236,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testPostRawClearsFormFields(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->postForm('https://example.com/api', ['field' => 'value']);
         $client->postRaw('https://example.com/api', 'raw', 'text/plain');
         
@@ -252,7 +252,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testSetCustomHeaders(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->header['X-Custom-Header'] = 'value';
         $client->header['X-Another-Header'] = 'another-value';
         
@@ -263,7 +263,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testSetHeadersWithMultipleValues(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->header = [
             'X-Header-1' => 'value1',
             'X-Header-2' => 'value2',
@@ -277,7 +277,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testSetHeadersWithEmptyArray(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->header = [];
         
         $client->get('https://example.com/api');
@@ -287,7 +287,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testSetAuthorizationHeader(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->authorizationHeader = 'Bearer token-123';
         
         $this->assertEquals('Bearer token-123', $client->authorizationHeader);
@@ -295,7 +295,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testSetAuthorizationHeaderAsArray(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->authorizationHeader = ['Bearer', 'token-123'];
         
         // Should accept array (for compatibility)
@@ -304,7 +304,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testSetAuthorizationHeaderAsString(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->authorizationHeader = 'Bearer token-123';
         
         $this->assertIsString($client->authorizationHeader);
@@ -313,7 +313,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testAuthorizationHeaderOverwritesHeaders(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->header = ['Content-Type' => 'application/json'];
         $client->authorizationHeader = 'Bearer token-123';
         
@@ -329,7 +329,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testSetFiles(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->files = ['file1' => '/path/to/file1.txt', 'file2' => '/path/to/file2.txt'];
         
         $this->assertIsArray($client->files);
@@ -338,7 +338,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testSetFilesWithLegacyFlow(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         $client->data = ['field1' => 'value1'];
         $client->files = ['file1' => '/nonexistent/file.txt'];
@@ -356,7 +356,7 @@ class SyncHttpClientTest extends TestCase
         file_put_contents($tempFile, 'test content');
         
         try {
-            $client = new SyncHttpClient();
+            $client = new HttpClient();
             $client->data = ['field1' => 'value1'];
             $client->files = ['file1' => $tempFile];
             
@@ -373,7 +373,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testSetFilesReturnsFalseWhenNoFiles(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->data = ['field1' => 'value1'];
         $client->files = [];
         
@@ -388,7 +388,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testSetData(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->data = ['key1' => 'value1', 'key2' => 'value2'];
         
         $this->assertIsArray($client->data);
@@ -397,7 +397,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testSetDataWithComplexData(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->data = [
             'string' => 'value',
             'int' => 123,
@@ -413,7 +413,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testSetDataWithEmptyArray(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->data = [];
         
         $this->assertIsArray($client->data);
@@ -426,14 +426,14 @@ class SyncHttpClientTest extends TestCase
     
     public function testMethodChaining(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $result = $client
             ->setTimeouts(5, 10)
             ->setSsl('/cert.pem', '/key.pem')
             ->setRetries(3, 500)
             ->retryOnNetworkError(true);
         
-        $this->assertInstanceOf(SyncHttpClient::class, $result);
+        $this->assertInstanceOf(HttpClient::class, $result);
         $this->assertEquals($client, $result);
     }
     
@@ -443,14 +443,14 @@ class SyncHttpClientTest extends TestCase
     
     public function testErrorPropertyInitialization(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         
         $this->assertEquals('call not initialized', $client->error);
     }
     
     public function testErrorPropertyCanBeSet(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->error = 'Test error message';
         
         $this->assertEquals('Test error message', $client->error);
@@ -458,14 +458,14 @@ class SyncHttpClientTest extends TestCase
     
     public function testHttpResponseCodeInitialization(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         
         $this->assertEquals(0, $client->http_response_code);
     }
     
     public function testHttpResponseCodeCanBeSet(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->http_response_code = 200;
         
         $this->assertEquals(200, $client->http_response_code);
@@ -477,14 +477,14 @@ class SyncHttpClientTest extends TestCase
     
     public function testResponseBodyInitialization(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         
         $this->assertFalse($client->responseBody);
     }
     
     public function testResponseBodyCanBeSetToString(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->responseBody = 'Response content';
         
         $this->assertEquals('Response content', $client->responseBody);
@@ -492,7 +492,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testResponseBodyCanBeSetToFalse(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->responseBody = 'Response';
         $client->responseBody = false;
         
@@ -505,7 +505,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testGetWithEmptyQueryParams(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->get('https://example.com/api', []);
         
         $this->assertEquals('GET', $client->method);
@@ -513,7 +513,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testPostWithEmptyData(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->post('https://example.com/api', []);
         
         $this->assertEquals('POST', $client->method);
@@ -523,7 +523,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testPutWithEmptyData(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->put('https://example.com/api', []);
         
         $this->assertEquals('PUT', $client->method);
@@ -532,7 +532,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testPostFormWithSpecialCharacters(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->postForm('https://example.com/api', [
             'field1' => 'value with spaces',
             'field2' => 'value&with=special'
@@ -543,7 +543,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testPostRawWithJsonContentType(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->postRaw('https://example.com/api', '{"key":"value"}', 'application/json');
         
         $this->assertEquals('application/json', $client->header['Content-Type']);
@@ -551,7 +551,7 @@ class SyncHttpClientTest extends TestCase
     
     public function testSetRetriesWithDuplicateHttpCodes(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->setRetries(3, 500, [429, 500, 429, 502]);
         
         // Duplicates should be removed
@@ -564,7 +564,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testThrowExceptionsMethod(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $result = $client->throwExceptions(true);
         
         $this->assertSame($client, $result);
@@ -572,7 +572,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testThrowExceptionsDisabled(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         // Should not throw, just return false
@@ -584,7 +584,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testErrorsPropertyIsEmptyInitially(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         
         $this->assertEmpty($client->errors);
         $this->assertFalse($client->hasErrors());
@@ -594,7 +594,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testErrorsPropertyAfterFailedRequest(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
@@ -607,7 +607,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testClearErrors(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
@@ -621,7 +621,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testErrorsClearedOnNewRequest(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
@@ -635,7 +635,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testGetErrorsReturnsArray(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
@@ -648,7 +648,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testExceptionContainsUrlAndErrorCode(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $url = 'https://invalid-domain-that-does-not-exist-xyz123.com/api';
@@ -662,7 +662,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testNetworkExceptionType(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $client->get('https://invalid-domain-that-does-not-exist-xyz123.com/api');
@@ -676,7 +676,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testSetUserAgent(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $result = $client->setUserAgent('Custom-Agent/1.0');
         
         $this->assertSame($client, $result);
@@ -684,7 +684,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testSetUserAgentWithEmptyString(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->setUserAgent('');
         
         // Should accept empty string
@@ -693,7 +693,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testRetryWithAllRetriesExhausted(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         $client->setRetries(2, 10, []);
         $client->retryOnNetworkError(true);
@@ -706,7 +706,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testRetryWithHttpCodeRetry(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         $client->setRetries(1, 10, [500, 502]);
         $client->retryOnNetworkError(false);
@@ -720,7 +720,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testShouldRetryReturnsFalseWhenRetriesDisabled(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         $client->setRetries(0, 10, [500]);
         $client->retryOnNetworkError(false);
@@ -734,7 +734,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testPostFormWithFiles(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         
         // Create temp file
         $tempFile = sys_get_temp_dir() . '/test_' . uniqid() . '.txt';
@@ -752,7 +752,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testPostMultipartWithNonExistentFile(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->postMultipart('https://example.com/api', ['field' => 'value'], ['file' => '/nonexistent/file.txt']);
         
         $this->assertTrue(true);
@@ -760,7 +760,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testPostRawWithDifferentContentTypes(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->postRaw('https://example.com/api', '<?xml version="1.0"?><root/>', 'application/xml');
         
         $this->assertEquals('application/xml', $client->header['Content-Type']);
@@ -768,7 +768,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testGetWithEmptyUrl(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         $client->get('');
@@ -779,7 +779,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testPutWithData(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->put('https://example.com/api', ['key' => 'value']);
         
         $this->assertEquals('PUT', $client->method);
@@ -788,7 +788,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testDeleteMethod(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->method = 'DELETE';
         $client->data = [];
         
@@ -799,7 +799,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testPatchMethod(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->method = 'PATCH';
         $client->data = ['key' => 'value'];
         
@@ -809,7 +809,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testPostRawWithPatchMethod(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->postRaw('https://example.com/api', 'raw body', 'text/plain');
         $client->method = 'PATCH';
         
@@ -819,7 +819,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testPostRawWithDeleteMethod(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->postRaw('https://example.com/api', 'raw body', 'text/plain');
         $client->method = 'DELETE';
         
@@ -829,7 +829,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testSetDataWithFormFields(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $reflection = new \ReflectionClass($client);
         $formFieldsProperty = $reflection->getProperty('formFields');
         $formFieldsProperty->setAccessible(true);
@@ -842,7 +842,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testSetFilesReturnsTrueWhenSuccessful(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         
         // Create temp file
         $tempFile = sys_get_temp_dir() . '/test_' . uniqid() . '.txt';
@@ -865,7 +865,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testSetFilesWithNonStringValue(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->data = ['field1' => 'value1'];
         $client->files = ['file1' => 123]; // Non-string value
         
@@ -876,7 +876,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testSetFilesWithNonExistentFile(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         $client->data = ['field1' => 'value1'];
         $client->files = ['file1' => '/nonexistent/file.txt'];
@@ -890,7 +890,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testSetFilesWithFormFieldsSet(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         $reflection = new \ReflectionClass($client);
         $formFieldsProperty = $reflection->getProperty('formFields');
@@ -907,7 +907,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testCurlInitFailure(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->throwExceptions(false);
         
         // This might fail curl_init in some edge cases
@@ -919,7 +919,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testApplyCommonCurlOptionsWithEmptyUserAgent(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->setUserAgent('');
         
         $client->get('https://example.com/api');
@@ -929,7 +929,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testApplyCommonCurlOptionsWithSslVerifyHost(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->setSsl(null, null, null, true, 2);
         
         $client->get('https://example.com/api');
@@ -939,7 +939,7 @@ class SyncHttpClientTest extends TestCase
 
     public function testApplyCommonCurlOptionsWithSslVerifyHostZero(): void
     {
-        $client = new SyncHttpClient();
+        $client = new HttpClient();
         $client->setSsl(null, null, null, true, 0);
         
         $client->get('https://example.com/api');

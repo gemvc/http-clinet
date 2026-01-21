@@ -4,3 +4,7 @@ parameters:
         - src
     excludePaths:
         - vendor/*
+    bootstrapFiles:
+        - tests/Stubs/Swoole.php
+    ignoreErrors:
+        - '#Anonymous function has an unused use \$barrier#'
