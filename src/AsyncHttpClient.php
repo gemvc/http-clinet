@@ -388,27 +388,25 @@ class AsyncHttpClient extends AbstractHttpClient implements IHttpClient
             return true;
         }
 
-
-
         // Fallback: Execute with very short timeout and minimal blocking
         // Set aggressive timeouts to minimize blocking
         $originalTimeout = $this->timeout;
         $originalConnectTimeout = $this->connect_timeout;
 
-        $this->timeout = 1; // 1 second max
-        $this->connect_timeout = 1; // 1 second max
+        try {
+            $this->timeout = 1; // 1 second max
+            $this->connect_timeout = 1; // 1 second max
 
-        // Execute but don't wait for all results
-        $this->executeAll();
-
-        // Restore original timeouts
-        $this->timeout = $originalTimeout;
-        $this->connect_timeout = $originalConnectTimeout;
+            // Execute but don't wait for all results
+            $this->executeAll();
+        } finally {
+            // Restore original timeouts
+            $this->timeout = $originalTimeout;
+            $this->connect_timeout = $originalConnectTimeout;
+        }
 
         return true;
     }
-
-
 
     /**
      * Clear the request queue
@@ -454,7 +452,14 @@ class AsyncHttpClient extends AbstractHttpClient implements IHttpClient
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 
         // Method and data
-        $this->setMethodAndData($ch, $request);
+        try {
+            $this->setMethodAndData($ch, $request);
+        } catch (\Throwable $e) {
+            // If encoding or setup fails, close handle and return false
+            // The caller (executeAll) will handle this as a failed request
+            curl_close($ch);
+            return false;
+        }
 
         return $ch;
     }
@@ -464,6 +469,7 @@ class AsyncHttpClient extends AbstractHttpClient implements IHttpClient
      * 
      * @param \CurlHandle $ch
      * @param array{id: string, url: string, method: string, data: array<mixed>, headers: array<string>, options: array<string, mixed>} $request
+     * @throws \JsonException When JSON encoding fails
      */
     private function setMethodAndData(\CurlHandle $ch, array $request): void
     {
@@ -495,10 +501,8 @@ class AsyncHttpClient extends AbstractHttpClient implements IHttpClient
         } elseif (isset($options['form']) && $options['form'] === true) {
             curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
         } elseif ($method === 'POST' || $method === 'PUT') {
-            $jsonData = json_encode($data);
-            if (is_string($jsonData)) {
-                curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonData);
-            }
+            $jsonData = json_encode($data, JSON_THROW_ON_ERROR);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonData);
         }
     }
 

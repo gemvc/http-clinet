@@ -6,11 +6,6 @@ use Gemvc\Http\Client\Exception\HttpClientException;
 
 /**
  * Synchronous HTTP Client (Blocking API calls) for Apache/Nginx environments
- * 
- * Fixes:
- * - Header overwriting bug
- * - Strict JSON encoding
- * - Proper resource cleanup
  */
 class HttpClient extends AbstractHttpClient implements IHttpClient
 {
