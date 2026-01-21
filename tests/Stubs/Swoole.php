@@ -7,6 +7,9 @@ class Coroutine
     public static function create(callable $callback): void
     {
     }
+    public static function sleep(float $seconds): void
+    {
+    }
 }
 
 namespace Swoole\Coroutine;

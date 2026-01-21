@@ -3,58 +3,44 @@
 namespace Gemvc\Http\Client;
 
 use Gemvc\Http\Client\Exception\HttpClientException;
-use Gemvc\Http\Client\Exception\NetworkException;
-use Gemvc\Http\Client\Exception\TimeoutException;
 
 /**
- * Synchronous HTTP Client (Blocked API calls) for Apache/Nginx environments
+ * Synchronous HTTP Client (Blocking API calls) for Apache/Nginx environments
  * 
- * Uses cURL for synchronous HTTP requests with support for:
- * - GET, POST, PUT requests
- * - Form data, multipart, and raw body
- * - SSL/TLS configuration
- * - Retry logic with exponential backoff
- * - Configurable timeouts
+ * Fixes:
+ * - Header overwriting bug
+ * - Strict JSON encoding
+ * - Proper resource cleanup
  */
 class HttpClient extends AbstractHttpClient implements IHttpClient
 {
     use CurlClientTrait;
+
     /**
-     * Last cURL error message (empty string if none).
-     * Defaults to 'call not initialized' until call() runs.
+     * Last cURL error message.
      */
     public ?string $error;
 
     /**
-     * HTTP response code from last request (0 if not executed).
+     * HTTP response code from last request.
      */
     public int $http_response_code;
 
     /**
-     * User headers as an associative array: ['Header-Name' => 'value']
-     * Legacy name and type kept for backward compatibility.
-     *
+     * User headers: ['Header-Name' => 'value']
      * @var array<string>
      */
     public array $header;
 
-    /**
-     * HTTP method. One of GET, POST, PUT, or custom.
-     */
     public string $method;
 
     /**
      * User payload for legacy JSON flow.
-     *
      * @var array<mixed>
      */
     public array $data;
 
     /**
-     * Authorization header (legacy behavior):
-     * - If string: setAuthorization() will overwrite previous header list
-     * - If array|string[]: not used by legacy logic; kept for compatibility
-     *
      * @var null|string|array<string>
      */
     public null|string|array $authorizationHeader;
@@ -65,35 +51,19 @@ class HttpClient extends AbstractHttpClient implements IHttpClient
     public bool|string $responseBody;
 
     /**
-     * Files for legacy multipart flow: ['field' => '/path/to/file']
-     *
+     * Files for multipart: ['field' => '/path/to/file']
      * @var array<mixed>
      */
     public array $files;
 
-    /**
-     * Raw request body (when using postRaw()).
-     */
     private ?string $rawBody = null;
-
     /**
      * Form fields (application/x-www-form-urlencoded or multipart/form-data).
-     *
-     * @var array<string,mixed>|null
+     * @var array<string, mixed>|null
      */
     private ?array $formFields = null;
-
-    /**
-     * Whether to throw exceptions on errors (default: true for better error handling)
-     */
     private bool $throwExceptions = true;
 
-    /**
-     * Control whether exceptions are thrown on errors
-     * 
-     * @param bool $throw If true, exceptions will be thrown. If false, errors are stored in $errors array.
-     * @return self
-     */
     public function throwExceptions(bool $throw): self
     {
         $this->throwExceptions = $throw;
@@ -102,12 +72,11 @@ class HttpClient extends AbstractHttpClient implements IHttpClient
 
     public function __construct()
     {
-        // Set legacy defaults (0 = no timeout, uses cURL defaults)
+        // Legacy defaults
         $this->connect_timeout = 0;
         $this->timeout = 0;
         $this->userAgent = 'gemserver';
 
-        // Initialize legacy public properties
         $this->error = 'call not initialized';
         $this->http_response_code = 0;
         $this->data = [];
@@ -117,6 +86,8 @@ class HttpClient extends AbstractHttpClient implements IHttpClient
         $this->responseBody = false;
         $this->method = 'GET';
     }
+
+    // --- Public Fluent API ---
 
     /**
      * POST with application/x-www-form-urlencoded body (opt-in).
@@ -135,7 +106,7 @@ class HttpClient extends AbstractHttpClient implements IHttpClient
      * POST multipart/form-data with files (opt-in).
      *
      * @param array<string, mixed> $fields
-     * @param array<string, string> $files
+     * @param array<string, mixed> $files
      */
     public function postMultipart(string $remoteApiUrl, array $fields = [], array $files = []): string|false
     {
@@ -146,9 +117,6 @@ class HttpClient extends AbstractHttpClient implements IHttpClient
         return $this->call($remoteApiUrl);
     }
 
-    /**
-     * POST with raw body and explicit content type (opt-in).
-     */
     public function postRaw(string $remoteApiUrl, string $rawBody, string $contentType): string|false
     {
         $this->method = 'POST';
@@ -162,7 +130,7 @@ class HttpClient extends AbstractHttpClient implements IHttpClient
      * Perform a GET request.
      *
      * @param string $remoteApiUrl
-     * @param array<string> $queryParams
+     * @param array<string, mixed> $queryParams
      */
     public function get(string $remoteApiUrl, array $queryParams = []): string|false
     {
@@ -208,106 +176,95 @@ class HttpClient extends AbstractHttpClient implements IHttpClient
         return $this->call($remoteApiUrl);
     }
 
+    // --- Core Logic ---
+
     /**
-     * Perform the API call.
-     * Applies optional timeouts/SSL/retries if configured; otherwise preserves legacy behavior.
-     * 
-     * @throws \Gemvc\Http\Client\Exception\HttpClientException
-     * @throws \Gemvc\Http\Client\Exception\NetworkException
-     * @throws \Gemvc\Http\Client\Exception\TimeoutException
+     * Perform the API call with Retry Logic.
      */
     private function call(string $remoteApiUrl): string|false
     {
-        // Reset per call
+        // Reset state
         $this->responseBody = false;
         $this->http_response_code = 0;
         $this->error = '';
-        $this->clearErrors(); // Clear previous errors
+        $this->clearErrors();
 
         $attempts = $this->max_retries + 1;
         $lastException = null;
 
         for ($attempt = 1; $attempt <= $attempts; $attempt++) {
             $ch = curl_init($remoteApiUrl);
-            if ($ch === false) {
-                $this->http_response_code = 500;
-                $this->error = "remote api $remoteApiUrl is not responding";
-                $exception = $this->createException(
-                    $remoteApiUrl,
-                    $this->error,
-                    500,
-                    0
-                );
 
-                // Store exception in errors array
+            if ($ch === false) {
+                // Handle initialization failure (rare)
+                $this->http_response_code = 500;
+                $this->error = "remote api $remoteApiUrl initialization failed";
+                $exception = $this->createException($remoteApiUrl, $this->error, 500, 0);
                 $this->addError($exception);
 
-                if ($this->throwExceptions) {
+                if ($this->throwExceptions)
                     throw $exception;
-                }
                 return false;
             }
 
-            // Apply common cURL options (timeouts, SSL, user agent)
+            // 1. Apply Trait Options (Timeout, SSL, etc.)
             $this->applyCommonCurlOptions($ch);
 
+            // 2. Set Method
             $this->setMethod($ch);
-            $this->setHeaders($ch);
-            $this->setAuthorization($ch);
-            $this->setData($ch);
-            $this->setFiles($ch);
 
+            // 3. Prepare Payload (Data & Files)
+            // This MUST be called before headers, as strict multipart might affect Content-Type
+            $this->preparePayload($ch);
+
+            // 4. Finalize Headers (CRITICAL FIX: Set all headers at once)
+            $this->finalizeHeaders($ch);
+
+            // 5. Execute
             $this->responseBody = curl_exec($ch);
             $this->http_response_code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $this->error = curl_error($ch);
+
             $curlErrorCode = $this->getCurlErrorCode($ch);
 
             curl_close($ch);
 
-            // Check for actual errors (network/timeout, not HTTP error codes)
-            // HTTP error codes (4xx, 5xx) are valid responses and should return the body
+            // 6. Error Handling
+            // Network error (empty body OR curl error string present)
             $hasNetworkError = !is_string($this->responseBody) || $this->error !== '';
 
             if ($hasNetworkError) {
                 $exception = $this->createException(
                     $remoteApiUrl,
-                    $this->error ?: "Request failed",
+                    (string) $this->error,
                     $this->http_response_code,
                     $curlErrorCode
                 );
                 $lastException = $exception;
-
-                // Store exception in errors array
                 $this->addError($exception);
 
-                // Use inherited retry logic
-                if ($this->shouldRetry($this->error, $this->http_response_code) && $attempt < $attempts) {
-                    $this->waitForRetry();
+                // Retry? (Uses parent logic + blocking wait)
+                if ($this->shouldRetry((string) $this->error, $this->http_response_code) && $attempt < $attempts) {
+                    $this->waitForRetry(); // Parent uses usleep() which is correct here
                     continue;
                 }
 
-                // All retries exhausted or not retryable
-                if ($this->throwExceptions) {
+                if ($this->throwExceptions)
                     throw $exception;
-                }
                 return false;
             }
 
-            // Success - return response body even if HTTP code is 4xx/5xx
-            // HTTP error codes are valid responses, not exceptions
+            // Success (Return body even if HTTP 4xx/5xx)
             return is_string($this->responseBody) ? $this->responseBody : false;
         }
 
-        // All retries exhausted
+        // Final failure after retries
         if ($lastException !== null) {
-            // Store last exception if not already stored
             if (!in_array($lastException, $this->errors, true)) {
                 $this->addError($lastException);
             }
-
-            if ($this->throwExceptions) {
+            if ($this->throwExceptions)
                 throw $lastException;
-            }
         }
         return false;
     }
@@ -317,7 +274,7 @@ class HttpClient extends AbstractHttpClient implements IHttpClient
      *
      * @param \CurlHandle $ch
      */
-    private function setMethod($ch): void
+    private function setMethod(\CurlHandle $ch): void
     {
         if ($this->method === 'POST') {
             curl_setopt($ch, CURLOPT_POST, true);
@@ -329,54 +286,21 @@ class HttpClient extends AbstractHttpClient implements IHttpClient
     }
 
     /**
-     * Set the headers for the request (legacy default JSON header preserved).
-     *
-     * @param \CurlHandle $ch
+     * Handles Raw, Form, Multipart, and JSON payloads
      */
-    private function setHeaders(\CurlHandle $ch): void
+    private function preparePayload(\CurlHandle $ch): void
     {
-        // Legacy default Content-Type
-        $headers = ['Content-Type: application/json'];
-        foreach ($this->header as $key => $value) {
-            $headers[] = "$key: $value";
-        }
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    }
-
-    /**
-     * Set the authorization header if present (legacy overwrite behavior preserved).
-     *
-     * @param \CurlHandle $ch
-     */
-    private function setAuthorization(\CurlHandle $ch): void
-    {
-        // Preserve legacy overwrite behavior if string is provided
-        if (is_string($this->authorizationHeader)) {
-            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: ' . $this->authorizationHeader]);
-        }
-    }
-
-    /**
-     * Set the data for the request.
-     * Priority (opt-in first):
-     *  - Raw body (postRaw)
-     *  - Form/multipart (postForm/postMultipart)
-     *  - Legacy JSON using $this->data (for POST/PUT)
-     *
-     * @param \CurlHandle $ch
-     * @throws HttpClientException when JSON encoding fails in legacy flow
-     */
-    private function setData(\CurlHandle $ch): void
-    {
-        // Raw body path (opt-in)
-        if ($this->rawBody !== null && ($this->method === 'POST' || $this->method === 'PUT' || $this->method === 'PATCH' || $this->method === 'DELETE')) {
+        // A. Raw Body (explicit postRaw)
+        if ($this->rawBody !== null && in_array($this->method, ['POST', 'PUT', 'PATCH', 'DELETE'])) {
             curl_setopt($ch, CURLOPT_POSTFIELDS, $this->rawBody);
             return;
         }
 
-        // Form or multipart (opt-in)
-        if (($this->method === 'POST' || $this->method === 'PUT') && ($this->formFields !== null || !empty($this->files))) {
+        // B. Form Fields / Multipart
+        if (in_array($this->method, ['POST', 'PUT']) && ($this->formFields !== null || !empty($this->files))) {
             $postFields = $this->formFields ?? [];
+
+            // Add files using CURLFile (Modern PHP)
             if (!empty($this->files)) {
                 foreach ($this->files as $key => $value) {
                     if (is_string($value) && is_file($value)) {
@@ -384,49 +308,47 @@ class HttpClient extends AbstractHttpClient implements IHttpClient
                     }
                 }
             }
+            // Note: cURL handles Content-Type for multipart automatically when array is passed
             curl_setopt($ch, CURLOPT_POSTFIELDS, $postFields);
             return;
         }
 
-        // Legacy JSON path for POST/PUT
+        // C. Legacy JSON (Default behavior for arrays)
         if ($this->method === 'POST' || $this->method === 'PUT') {
-            $data_to_send = json_encode($this->data);
-            if (!is_string($data_to_send)) {
-                $jsonError = json_last_error_msg();
-                throw new HttpClientException(
-                    "Failed to encode data to JSON format: {$jsonError}",
-                    0,
-                    null,
-                    null,
-                    0,
-                    0
-                );
+            try {
+                $data_to_send = json_encode($this->data, JSON_THROW_ON_ERROR);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, $data_to_send);
+
+                // Ensure Content-Type is set for JSON
+                if (!isset($this->header['Content-Type'])) {
+                    $this->header['Content-Type'] = 'application/json';
+                }
+            } catch (\JsonException $e) {
+                throw new HttpClientException("JSON Encoding Failed: " . $e->getMessage());
             }
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $data_to_send);
         }
     }
 
     /**
-     * Set the files for the request if any (legacy multipart path).
-     * Preserved for backward compatibility when only $files is provided.
-     *
-     * @param \CurlHandle $ch
+     * Aggregates all headers and sets them ONCE to prevent overwriting.
      */
-    private function setFiles(\CurlHandle $ch): bool
+    private function finalizeHeaders(\CurlHandle $ch): void
     {
-        if (!empty($this->files) && ($this->formFields === null)) {
-            $postFields = $this->data;
-            foreach ($this->files as $key => $value) {
-                if (is_string($value)) {
-                    $postFields[$key] = new \CURLFile($value);
-                    $step_one = curl_setopt($ch, CURLOPT_POSTFIELDS, $postFields);
-                    $step_two = curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: multipart/form-data']);
-                    if ($step_one && $step_two) {
-                        return true;
-                    }
-                }
-            }
+        $finalHeaders = [];
+
+        // 1. User Headers (including Content-Type if set in preparePayload)
+        foreach ($this->header as $key => $value) {
+            $finalHeaders[] = "$key: $value";
         }
-        return false;
+
+        // 2. Authorization (Legacy property support)
+        if (is_string($this->authorizationHeader) && !empty($this->authorizationHeader)) {
+            $finalHeaders[] = 'Authorization: ' . $this->authorizationHeader;
+        }
+
+        // 3. Set All Headers
+        if (!empty($finalHeaders)) {
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $finalHeaders);
+        }
     }
 }

@@ -154,7 +154,7 @@ class SwooleHttpClient extends AbstractHttpClient implements IHttpClient
         $this->clearQueue();
 
         // Spawn coroutine
-        \Swoole\Coroutine::create(function () use ($queue, $callbacks) {
+        Coroutine::create(function () use ($queue, $callbacks) {
             $this->processQueue($queue, $callbacks);
         });
 
@@ -212,7 +212,7 @@ class SwooleHttpClient extends AbstractHttpClient implements IHttpClient
             // Acquire slot
             $channel->push(true);
 
-            \Swoole\Coroutine::create(function () use ($request, $callbacks, $barrier, $channel, &$results) {
+            Coroutine::create(function () use ($request, $callbacks, $barrier, $channel, &$results) {
                 try {
                     $result = $this->executeSingleRequest($request);
                     $results[$request['id']] = $result;
@@ -235,10 +235,10 @@ class SwooleHttpClient extends AbstractHttpClient implements IHttpClient
     }
 
     /**
-     * Execute a single request
+     * Execute a single request with Safe Retry Logic
      * 
      * @param array{id: string, url: string, method: string, data: mixed, headers: array<string, string>, options: array<string, mixed>} $request
-     * @return array{success: bool, body: string|false, http_code: int, error: string, duration: float}
+     * @return array{success: bool, body: string, http_code: int, error: string, duration: float}
      */
     private function executeSingleRequest(array $request): array
     {
@@ -253,59 +253,107 @@ class SwooleHttpClient extends AbstractHttpClient implements IHttpClient
         $ssl = ($scheme === 'https');
         $path = ($urlParts['path'] ?? '/') . (isset($urlParts['query']) ? '?' . $urlParts['query'] : '');
 
-        $client = new Client($host, $port, $ssl);
-        $client->set(['timeout' => $this->timeout, 'connect_timeout' => $this->connect_timeout]);
+        // Retry Loop Control Variables
+        $attempt = 0;
+        // Defaults to 0 from AbstractHttpClient. If not set by user, loop runs exactly once.
+        $maxRetries = $this->max_retries;
 
-        // Headers
-        $headers = $request['headers'];
-        if (!isset($headers['User-Agent'])) {
-            $headers['User-Agent'] = $this->userAgent;
-        }
-        $client->setHeaders($headers);
+        do {
+            $client = new Client($host, $port, $ssl);
 
-        // Method & Data
-        $method = $request['method'];
-        $client->setMethod($method);
+            // 1. Apply Configuration
+            $settings = [
+                'timeout' => $this->timeout,
+                'connect_timeout' => $this->connect_timeout,
+            ];
 
-        if (!empty($request['data'])) {
-            $data = $request['data'];
-            // If data is array and not multipart/raw, Swoole Client handles it as form-data automatically 
-            // if we pass it to setData. For JSON we need to encode manually.
-            if (isset($headers['Content-Type']) && str_contains($headers['Content-Type'], 'application/json')) {
-                $client->setData(json_encode($data));
-            } else {
-                $client->setData($data);
+            // 2. Apply SSL Context (Critical for mTLS)
+            if ($ssl) {
+                $settings = array_merge($settings, [
+                    'ssl_cert_file' => $this->ssl_cert,
+                    'ssl_key_file' => $this->ssl_key,
+                    'ssl_cafile' => $this->ssl_ca,
+                    'ssl_verify_peer' => $this->ssl_verify_peer,
+                ]);
             }
-        }
+            $client->set($settings);
 
-        $startTime = microtime(true);
-        $success = $client->execute($path);
-        $duration = microtime(true) - $startTime;
+            // 3. Prepare Headers & Method
+            $headers = $request['headers'];
+            if (!isset($headers['User-Agent'])) {
+                $headers['User-Agent'] = $this->userAgent;
+            }
+            $client->setHeaders($headers);
+            $client->setMethod($request['method']);
 
-        if (!$success) {
+            // 4. Prepare Body (JSON Safety)
+            if (!empty($request['data'])) {
+                if (isset($headers['Content-Type']) && str_contains($headers['Content-Type'], 'application/json')) {
+                    try {
+                        $jsonData = json_encode($request['data'], JSON_THROW_ON_ERROR);
+                        $client->setData($jsonData);
+                    } catch (\JsonException $e) {
+                        $client->close();
+                        // Fatal Error: Malformed JSON cannot be fixed by retrying.
+                        return $this->createErrorResult("JSON Encoding Failed: " . $e->getMessage());
+                    }
+                } else {
+                    $client->setData($request['data']);
+                }
+            }
+
+            // 5. Execute Request
+            $startTime = microtime(true);
+            $success = $client->execute($path);
+            $duration = microtime(true) - $startTime;
+
+            // Capture State
+            $statusCode = (int) $client->getStatusCode();
+            $body = (string) $client->getBody();
             $errCode = $client->errCode;
             $errMsg = $client->errMsg;
+
+            // Clean up connection immediately
             $client->close();
-            return $this->createErrorResult("Swoole Client Error ($errCode): $errMsg", $duration);
-        }
 
-        $body = (string) $client->getBody();
-        $statusCode = (int) $client->getStatusCode();
-        $client->close();
+            // --- Exit Condition 1: Success ---
+            if ($success && $statusCode > 0) {
+                return [
+                    'success' => $statusCode >= 200 && $statusCode < 400,
+                    'body' => $body,
+                    'http_code' => $statusCode,
+                    'error' => '',
+                    'duration' => $duration
+                ];
+            }
 
-        return [
-            'success' => $statusCode >= 200 && $statusCode < 400,
-            'body' => $body,
-            'http_code' => $statusCode,
-            'error' => '',
-            'duration' => $duration
-        ];
+            // --- Retry Evaluation ---
+            // Check parent logic: is this error type retriable?
+            if ($this->shouldRetry($errMsg, $statusCode)) {
+                $attempt++;
+
+                // --- Exit Condition 2: Max Retries Limit ---
+                if ($attempt <= $maxRetries) {
+                    $this->waitForRetry(); // Non-blocking Coroutine Sleep
+                    continue; // Restart Loop
+                }
+            }
+
+            // --- Exit Condition 3: Final Failure ---
+            return $this->createErrorResult(
+                "Swoole Client Error ($errCode): $errMsg. HTTP: $statusCode",
+                $duration
+            );
+
+        } while ($attempt <= $maxRetries); // Final safety guard
+
+        return $this->createErrorResult("Unknown Execution Error");
     }
 
     /**
      * Create error result
      * 
-     * @return array{success: bool, body: string|false, http_code: int, error: string, duration: float}
+     * @return array{success: bool, body: string, http_code: int, error: string, duration: float}
      */
     private function createErrorResult(string $message, float $duration = 0.0): array
     {
@@ -316,10 +364,23 @@ class SwooleHttpClient extends AbstractHttpClient implements IHttpClient
 
         return [
             'success' => false,
-            'body' => false,
+            'body' => '',
             'http_code' => 0,
             'error' => $message,
             'duration' => $duration
         ];
+    }
+
+    /**
+     * Sleep for retry delay using Coroutine::sleep
+     * 
+     * Overrides parent::waitForRetry to be non-blocking in Swoole
+     */
+    protected function waitForRetry(): void
+    {
+        if ($this->retry_delay_ms > 0) {
+            // Use Coroutine::sleep (seconds) instead of usleep to avoid blocking
+            Coroutine::sleep($this->retry_delay_ms / 1000);
+        }
     }
 }
