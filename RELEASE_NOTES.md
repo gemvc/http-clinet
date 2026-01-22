@@ -1,6 +1,6 @@
 # Release Notes
 
-## Version 1.2.0 - January 21, 2026
+## Version 1.2.0 - January 22, 2026
 
 **Native Swoole Coroutines & Architectural Refactoring** - This release brings true native performance for Swoole environments and cleans up the internal architecture.
 
