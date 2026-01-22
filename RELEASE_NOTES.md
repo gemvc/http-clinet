@@ -6,18 +6,18 @@
 
 ### What's New
 
-#### 🚀 Native Swoole Support
+#### Native Swoole Support
 - **`SwooleHttpClient`** has been completely rewritten to use `Swoole\Coroutine\Http\Client` directly.
 - **True Non-Blocking**: No longer relies on cURL hooks; uses lightweight Swoole coroutines.
 - **`fireAndForget()`**: Now spawns a genuine background coroutine using `go()`, ensuring zero blocking for background tasks.
 - **Concurrent Execution**: Uses `Swoole\Coroutine\Barrier` and `Channel` for efficient concurrent request processing.
 
-#### 🏗️ Architectural Improvements
+#### Architectural Improvements
 - **Decoupled cURL**: cURL-specific logic has been moved out of `AbstractHttpClient` into a reusable `CurlClientTrait`.
 - **Cleaner Inheritance**: `AbstractHttpClient` is now a pure base class for state and configuration, making it easier to implement non-cURL clients (like the new Swoole client).
 - **Type Safety**: Achieved **PHPStan Level 9** compliance across the entire package.
 
-#### 🧪 Testing & Stability
+#### Testing & Stability
 - Added **Swoole Stubs** to allow running static analysis and unit tests on Windows/macOS where the Swoole extension might be missing.
 - Improved test coverage and reliability.
 
@@ -29,12 +29,12 @@
 
 ### What's New
 
-#### 🏗️ Architecture Improvements
+#### Architecture Improvements
 - **`AbstractHttpClient`** - New abstract base class that centralizes common properties and methods across all HTTP client implementations
 - Reduced code duplication through shared base functionality
 - Improved maintainability and consistency across all client types
 
-#### 🛡️ Enhanced Error Handling
+#### Enhanced Error Handling
 
 **Error Storage & Management**
 - **`$errors` array property** - All exceptions are automatically stored, allowing inspection without try-catch blocks

@@ -98,7 +98,7 @@ $apm->setTimeouts(2, 5)
         'duration' => 0.123,
         'status' => 200
     ])
-    ->fireAndForget(); // ⚡ Does NOT block!
+    ->fireAndForget(); // Does NOT block!
 ```
 
 ## Environment-Specific Implementations
@@ -251,5 +251,5 @@ Contributions welcome! Please follow:
 - Comprehensive test coverage
 
 ---
-
+[GemVC , Lightweight PHP Framework Built for Microservices](https://www.gemvc.de) 
 Made with ❤️ by Ali Khorsandfard
