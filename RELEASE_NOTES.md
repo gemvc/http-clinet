@@ -1,3 +1,4 @@
+![gemvc_let](https://github.com/user-attachments/assets/006f845a-3343-4f91-825e-dee7ef898cb9)
 # Release Notes
 
 ## Version 1.2.0 - January 22, 2026
