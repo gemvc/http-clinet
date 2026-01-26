@@ -72,7 +72,7 @@ abstract class AbstractHttpClient
     /**
      * Default user agent
      */
-    protected string $userAgent = 'gemserver';
+    protected string $userAgent = 'gemvc-http-client';
 
     /**
      * Array of exceptions/errors that occurred during requests

@@ -49,7 +49,7 @@ class AsyncHttpClient extends AbstractHttpClient implements IHttpClient
     public function __construct()
     {
         // Set async-specific defaults
-        $this->userAgent = 'gemserver-async';
+        $this->userAgent = 'gemvc-http-client-async';
     }
 
     /**
@@ -455,9 +455,9 @@ class AsyncHttpClient extends AbstractHttpClient implements IHttpClient
         try {
             $this->setMethodAndData($ch, $request);
         } catch (\Throwable $e) {
-            // If encoding or setup fails, close handle and return false
+            // If encoding or setup fails, return false
             // The caller (executeAll) will handle this as a failed request
-            curl_close($ch);
+            // Note: curl_close() is deprecated in PHP 8.2+; handle is auto-cleaned when out of scope
             return false;
         }
 

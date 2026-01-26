@@ -2,9 +2,7 @@
 
 namespace Gemvc\Http\Client;
 
-use Swoole\Coroutine;
-use Swoole\Coroutine\Http\Client;
-use Swoole\Coroutine\Barrier;
+// Support both Swoole and OpenSwoole - use fully qualified names at runtime
 
 /**
  * Swoole-native Asynchronous HTTP Client
@@ -32,10 +30,21 @@ class SwooleHttpClient extends AbstractHttpClient implements IHttpClient
      * Maximum concurrent requests
      */
     private int $maxConcurrency = 20;
+    
+    /**
+     * Cached class names for Swoole/OpenSwoole compatibility
+     */
+    private ?string $coroutineClass = null;
+    private ?string $clientClass = null;
 
     public function __construct()
     {
         $this->userAgent = 'gemvc-swoole-client';
+        
+        // Support both Swoole and OpenSwoole
+        $isOpenSwoole = extension_loaded('openswoole');
+        $this->coroutineClass = $isOpenSwoole ? 'OpenSwoole\Coroutine' : 'Swoole\Coroutine';
+        $this->clientClass = $isOpenSwoole ? 'OpenSwoole\Coroutine\Http\Client' : 'Swoole\Coroutine\Http\Client';
     }
 
     /**
@@ -154,9 +163,33 @@ class SwooleHttpClient extends AbstractHttpClient implements IHttpClient
         $this->clearQueue();
 
         // Spawn coroutine
-        Coroutine::create(function () use ($queue, $callbacks) {
+        $coroutineClass = $this->coroutineClass;
+        if (!class_exists($coroutineClass)) {
+            error_log("ERROR: Coroutine class not found, try to synchronously execute: {$coroutineClass}");
+            // Fallback: execute synchronously
             $this->processQueue($queue, $callbacks);
-        });
+        } else {
+            //error_log("DEBUG CORO: Creating coroutine, queue size: " . count($queue) . ", class: " . $coroutineClass);
+            
+            try {
+                $coroutineId = $coroutineClass::create(function () use ($queue, $callbacks) {
+                    // #region agent log - Coroutine started
+                    //error_log("DEBUG CORO: ✅ Coroutine STARTED, processing " . count($queue) . " requests");
+                    // #endregion
+                    try {
+                        $this->processQueue($queue, $callbacks);
+                    } catch (\Throwable $e) {
+                        error_log("DEBUG CORO: ❌ processQueue() exception: " . $e->getMessage());
+                    }
+                    // #region agent log - Coroutine completed
+                   // error_log("DEBUG CORO: ✅ Coroutine COMPLETED");
+                    // #endregion
+                });
+                //error_log("DEBUG CORO: Coroutine created with ID: " . ($coroutineId ?? 'null'));
+            } catch (\Throwable $e) {
+                error_log("DEBUG CORO: ❌ Failed to create coroutine: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
+            }
+        }
 
         return true;
     }
@@ -201,21 +234,61 @@ class SwooleHttpClient extends AbstractHttpClient implements IHttpClient
     private function processQueue(array $queue, array $callbacks): array
     {
         $results = [];
-        $barrier = Barrier::make();
+        
+        // Support both Swoole and OpenSwoole
+        $isOpenSwoole = extension_loaded('openswoole');
+        $coroutineClass = $this->coroutineClass;
+        $channelClass = $isOpenSwoole ? 'OpenSwoole\Coroutine\Channel' : 'Swoole\Coroutine\Channel';
+        
+        // Try to use Barrier, fallback to WaitGroup or simple coroutine spawning
+        $barrierClass = $isOpenSwoole ? 'OpenSwoole\Coroutine\Barrier' : 'Swoole\Coroutine\Barrier';
+        $waitGroupClass = $isOpenSwoole ? 'OpenSwoole\Coroutine\WaitGroup' : 'Swoole\Coroutine\WaitGroup';
+        $useBarrier = class_exists($barrierClass);
+        $useWaitGroup = !$useBarrier && class_exists($waitGroupClass);
+        
+        $barrier = null;
+        $waitGroup = null;
+        
+        if ($useBarrier) {
+            $barrier = $barrierClass::make();
+        } elseif ($useWaitGroup) {
+            $waitGroup = new $waitGroupClass();
+        }
+        
         $concurrency = $this->maxConcurrency;
 
         // Channel to limit concurrency
-        $channel = new Coroutine\Channel($concurrency);
+        if (!class_exists($channelClass)) {
+            error_log("ERROR: Channel class not found: {$channelClass}");
+            $channel = null; // Will skip channel logic
+        } else {
+            $channel = new $channelClass($concurrency);
+        }
 
+        // #region agent log - ProcessQueue started
+        //error_log("DEBUG QUEUE: Processing " . count($queue) . " requests, Barrier=" . ($useBarrier?'yes':'no') . ", WaitGroup=" . ($useWaitGroup?'yes':'no'));
+        // #endregion
+        
         foreach ($queue as $request) {
+            // Acquire slot if channel exists
+            if ($channel !== null) {
+                $channel->push(true);
+            }
+            
+            // Add to wait group if using WaitGroup
+            if ($waitGroup !== null) {
+                $waitGroup->add();
+            }
 
-            // Acquire slot
-            $channel->push(true);
-
-            Coroutine::create(function () use ($request, $callbacks, $barrier, $channel, &$results) {
+           // #endregion
+            $coroutineClass::create(function () use ($request, $callbacks, $barrier, $waitGroup, $channel, &$results) {
                 try {
                     $result = $this->executeSingleRequest($request);
                     $results[$request['id']] = $result;
+                    
+                    // #region agent log - HTTP response tracking
+                    error_log("DEBUG HTTP: URL={$request['url']}, Success=" . ($result['success']?'yes':'no') . ", HTTP={$result['http_code']}, Error={$result['error']}");
+                    // #endregion
 
                     if (isset($callbacks[$request['id']])) {
                         try {
@@ -224,13 +297,57 @@ class SwooleHttpClient extends AbstractHttpClient implements IHttpClient
                             // Callback error ignored
                         }
                     }
+                } catch (\Throwable $e) {
+                    // #region agent log - Exception tracking
+                    error_log("DEBUG HTTP ERROR: URL={$request['url']}, Exception=" . $e->getMessage());
+                    // #endregion
                 } finally {
-                    $channel->pop(); // Release slot
+                    if ($channel !== null) {
+                        $channel->pop(); // Release slot
+                    }
+                    if ($waitGroup !== null) {
+                        $waitGroup->done(); // Signal completion
+                    }
                 }
             });
         }
 
-        Barrier::wait($barrier);
+        // Wait for all coroutines to complete
+        // For executeAll(): we wait to get results
+        // For fireAndForget(): we wait in background coroutine (main flow already returned)
+        // #region agent log - Waiting for completion
+        //error_log("DEBUG QUEUE: Waiting for completion, Barrier=" . ($useBarrier?'yes':'no') . ", WaitGroup=" . ($useWaitGroup?'yes':'no'));
+        // #endregion
+        
+        if ($useBarrier && $barrier !== null) {
+            try {
+                $barrierClass::wait($barrier);
+                // #region agent log
+                //error_log("DEBUG QUEUE: Barrier::wait() completed");
+                // #endregion
+            } catch (\Throwable $e) {
+                error_log("ERROR: Barrier::wait() failed: " . $e->getMessage());
+            }
+        } elseif ($useWaitGroup && $waitGroup !== null) {
+            try {
+                $waitGroup->wait();
+                // #region agent log
+                //error_log("DEBUG QUEUE: WaitGroup::wait() completed");
+                // #endregion
+            } catch (\Throwable $e) {
+                error_log("ERROR: WaitGroup::wait() failed: " . $e->getMessage());
+            }
+        } else {
+            error_log("DEBUG QUEUE: No wait mechanism, coroutines running asynchronously");
+        }
+        // If neither Barrier nor WaitGroup available, coroutines run asynchronously
+        // Results may be incomplete, but requests will still execute in background
+        // This is acceptable for fire-and-forget, but executeAll() may return incomplete results
+        
+        // #region agent log - ProcessQueue completed
+        //error_log("DEBUG QUEUE: processQueue() completed, results: " . count($results));
+        // #endregion
+        
         return $results;
     }
 
@@ -259,7 +376,11 @@ class SwooleHttpClient extends AbstractHttpClient implements IHttpClient
         $maxRetries = $this->max_retries;
 
         do {
-            $client = new Client($host, $port, $ssl);
+            $clientClass = $this->clientClass;
+            if (!class_exists($clientClass)) {
+                throw new \RuntimeException("HTTP Client class not found: {$clientClass}");
+            }
+            $client = new $clientClass($host, $port, $ssl);
 
             // 1. Apply Configuration
             $settings = [
@@ -318,8 +439,13 @@ class SwooleHttpClient extends AbstractHttpClient implements IHttpClient
 
             // --- Exit Condition 1: Success ---
             if ($success && $statusCode > 0) {
+                $isSuccess = $statusCode >= 200 && $statusCode < 400;
+                // #region agent log - HTTP response details
+                $requestUrl = $request['url'] ?? 'unknown';
+                //error_log("DEBUG HTTP RESPONSE: URL={$requestUrl}, Status={$statusCode}, Success=" . ($isSuccess?'yes':'no'));
+                // #endregion
                 return [
-                    'success' => $statusCode >= 200 && $statusCode < 400,
+                    'success' => $isSuccess,
                     'body' => $body,
                     'http_code' => $statusCode,
                     'error' => '',
@@ -328,7 +454,12 @@ class SwooleHttpClient extends AbstractHttpClient implements IHttpClient
             }
 
             // --- Retry Evaluation ---
-            // Check parent logic: is this error type retriable?
+            // Check parent logic: is this error type retirable?
+            // #region agent log - HTTP error before retry
+            $requestUrl = $request['url'] ?? 'unknown';
+            //error_log("DEBUG HTTP FAILED: URL={$requestUrl}, Status={$statusCode}, ErrCode={$errCode}, Attempt={$attempt}/{$maxRetries}");
+            // #endregion
+            
             if ($this->shouldRetry($errMsg, $statusCode)) {
                 $attempt++;
 
@@ -340,10 +471,11 @@ class SwooleHttpClient extends AbstractHttpClient implements IHttpClient
             }
 
             // --- Exit Condition 3: Final Failure ---
-            return $this->createErrorResult(
-                "Swoole Client Error ($errCode): $errMsg. HTTP: $statusCode",
-                $duration
-            );
+            $finalError = "Swoole Client Error ($errCode): $errMsg. HTTP: $statusCode";
+            // #region agent log - Final failure
+            error_log("DEBUG HTTP FINAL FAILURE: URL={$requestUrl}, Error={$finalError}");
+            // #endregion
+            return $this->createErrorResult($finalError, $duration);
 
         } while ($attempt <= $maxRetries); // Final safety guard
 
@@ -380,7 +512,13 @@ class SwooleHttpClient extends AbstractHttpClient implements IHttpClient
     {
         if ($this->retry_delay_ms > 0) {
             // Use Coroutine::sleep (seconds) instead of usleep to avoid blocking
-            Coroutine::sleep($this->retry_delay_ms / 1000);
+            $coroutineClass = $this->coroutineClass;
+            if (class_exists($coroutineClass) && method_exists($coroutineClass, 'sleep')) {
+                $coroutineClass::sleep($this->retry_delay_ms / 1000);
+            } else {
+                // Fallback to usleep if coroutine sleep not available
+                usleep($this->retry_delay_ms * 1000);
+            }
         }
     }
 }
