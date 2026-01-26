@@ -1,6 +1,32 @@
 ![gemvc_let](https://github.com/user-attachments/assets/006f845a-3343-4f91-825e-dee7ef898cb9)
 # Release Notes
 
+## Version 1.2.1 - January 26, 2026
+
+**Bug Fixes & PHP 8.2+ Compatibility** - This patch release addresses deprecation warnings and improves compatibility.
+
+### Bug Fixes
+
+#### PHP 8.2+ Compatibility
+- **Fixed `curl_close()` deprecation**: Removed deprecated `curl_close()` call in `AsyncHttpClient`. In PHP 8.2+, cURL handles are objects that are automatically cleaned up when they go out of scope, eliminating the need for explicit cleanup.
+
+#### User Agent Consistency
+- **Standardized user agent strings**: Updated default user agents from `gemserver`/`gemserver-async` to `gemvc-http-client`/`gemvc-http-client-async` across all client implementations for better consistency and identification.
+
+#### Swoole/OpenSwoole Compatibility
+- **Dual extension support**: `SwooleHttpClient` now automatically detects and supports both Swoole and OpenSwoole extensions
+- **Improved error handling**: Added proper try-catch blocks around coroutine creation with fallback to synchronous execution if coroutine creation fails
+- **Better compatibility**: Works seamlessly with either extension without requiring code changes
+
+### Technical Details
+
+- Removed deprecated `curl_close()` in error handling path of `AsyncHttpClient::createCurlHandle()`
+- Updated user agent defaults in `AbstractHttpClient` and `AsyncHttpClient`
+- Enhanced `SwooleHttpClient` with runtime class detection for Swoole/OpenSwoole compatibility
+- Added error logging and graceful fallback mechanisms in coroutine creation
+
+---
+
 ## Version 1.2.0 - January 22, 2026
 
 **Native Swoole Coroutines & Architectural Refactoring** - This release brings true native performance for Swoole environments and cleans up the internal architecture.

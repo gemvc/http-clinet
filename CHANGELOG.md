@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1] - 2026-01-26
+
+### Fixed
+- Fixed `curl_close()` deprecation warning in `AsyncHttpClient` for PHP 8.2+ compatibility (handles are now auto-cleaned when out of scope)
+- Fixed user agent strings: Changed from `gemserver`/`gemserver-async` to `gemvc-http-client`/`gemvc-http-client-async` for consistency
+- Fixed `SwooleHttpClient` to support both Swoole and OpenSwoole extensions with automatic detection and proper fallback handling
+- Improved error handling in `SwooleHttpClient` coroutine creation with try-catch blocks and fallback to synchronous execution
+
 ## [1.2.0] - 2026-01-21
 
 ### Added
